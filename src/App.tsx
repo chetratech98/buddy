@@ -37,7 +37,7 @@ const App = () => (
             <Route path="/auth" element={<Auth />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="/get-started" element={<GetStarted />} />
+            <Route path="/get-started" element={<ProtectedRoute><GetStarted /></ProtectedRoute>} />
             
             {/* Protected Routes - Require Login */}
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

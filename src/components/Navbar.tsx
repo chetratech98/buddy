@@ -8,12 +8,12 @@ const navLinks = [
   { label: "Features", href: "#features", isRoute: false, authOnly: false },
   { label: "How It Works", href: "#how-it-works", isRoute: false, authOnly: false },
   { label: "Pricing", href: "#pricing", isRoute: false, authOnly: false },
-  { label: "Dashboard", href: "/dashboard", isRoute: true },
-  { label: "Billing", href: "/billing", isRoute: true },
-  { label: "Analyze My Site", href: "/get-started", isRoute: true },
-  { label: "SERP Analysis", href: "/seo-analysis", isRoute: true },
-  { label: "Content Plan", href: "/content-plan", isRoute: true },
-  { label: "Today's Blog", href: "/todays-blog", isRoute: true },
+  { label: "Dashboard", href: "/dashboard", isRoute: true, authOnly: true },
+  { label: "Billing", href: "/billing", isRoute: true, authOnly: true },
+  { label: "Analyze My Site", href: "/get-started", isRoute: true, authOnly: true },
+  { label: "SERP Analysis", href: "/seo-analysis", isRoute: true, authOnly: true },
+  { label: "Content Plan", href: "/content-plan", isRoute: true, authOnly: true },
+  { label: "Today's Blog", href: "/todays-blog", isRoute: true, authOnly: true },
 ];
 
 const Navbar = () => {
@@ -21,8 +21,8 @@ const Navbar = () => {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
 
-  // Show all links - no auth filtering needed since demo mode works
-  const filteredLinks = navLinks;
+  // Filter links based on authentication status
+  const filteredLinks = navLinks.filter(link => !link.authOnly || user);
 
   return (
     <motion.nav
@@ -83,13 +83,13 @@ const Navbar = () => {
           ) : (
             <>
               <button
-                onClick={() => navigate("/seo-analysis")}
+                onClick={() => navigate("/auth")}
                 className="text-sm text-muted-foreground hover:text-foreground transition-colors font-medium"
               >
-                Try Demo
+                Sign In
               </button>
               <button
-                onClick={() => navigate("/get-started")}
+                onClick={() => navigate("/auth")}
                 className="bg-primary text-primary-foreground font-semibold text-sm px-5 py-2.5 rounded-xl transition-all duration-200 hover:brightness-110 shadow-sm"
               >
                 Get Started

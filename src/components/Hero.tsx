@@ -1,9 +1,11 @@
 import { motion } from "framer-motion";
 import { ArrowRight, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Hero = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   return (
     <section className="hero-bg-gradient relative overflow-hidden">
@@ -46,16 +48,16 @@ const Hero = () => {
             {/* CTAs */}
             <div className="mt-10 flex flex-col sm:flex-row items-start gap-4">
               <button
-                onClick={() => navigate("/get-started")}
+                onClick={() => navigate(user ? "/get-started" : "/auth")}
                 className="hero-btn-primary flex items-center gap-2 text-base"
               >
-                Start Free Trial <ArrowRight size={18} />
+                {user ? "Analyze My Site" : "Start Free Trial"} <ArrowRight size={18} />
               </button>
               <button 
-                onClick={() => navigate("/seo-analysis")}
+                onClick={() => navigate(user ? "/dashboard" : "/auth")}
                 className="hero-btn-secondary text-base"
               >
-                Try Demo
+                {user ? "Go to Dashboard" : "Sign In"}
               </button>
             </div>
           </motion.div>

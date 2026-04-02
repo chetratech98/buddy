@@ -105,23 +105,20 @@ const GetStarted = () => {
   };
 
   const saveNicheEdit = useCallback(async () => {
+    if (!user) return;
+    
     setSavingNiche(true);
-    
-    // Save to session storage for non-logged-in users
     const updatedResult = { ...result, niche: editNiche, keywords: editKeywords };
-    sessionStorage.setItem('siteAnalysis', JSON.stringify(updatedResult));
     
-    // If user is logged in, also save to database
-    if (user) {
-      const { error } = await supabase
-        .from("profiles")
-        .update({ niche: editNiche, keywords: editKeywords } as any)
-        .eq("user_id", user.id);
-      if (error) {
-        toast({ title: "Error saving", description: error.message, variant: "destructive" });
-        setSavingNiche(false);
-        return;
-      }
+    const { error } = await supabase
+      .from("profiles")
+      .update({ niche: editNiche, keywords: editKeywords } as any)
+      .eq("user_id", user.id);
+      
+    if (error) {
+      toast({ title: "Error saving", description: error.message, variant: "destructive" });
+      setSavingNiche(false);
+      return;
     }
     
     setSavingNiche(false);
@@ -130,22 +127,7 @@ const GetStarted = () => {
     setResult(updatedResult);
   }, [user, editNiche, editKeywords, toast, result]);
   useEffect(() => {
-    // Try to load from session storage first (for non-logged-in users)
-    const storedAnalysis = sessionStorage.getItem('siteAnalysis');
-    if (storedAnalysis) {
-      try {
-        const data = JSON.parse(storedAnalysis);
-        if (data.website_url) {
-          setUrl(data.website_url);
-          setResult(data);
-          setSaved(true);
-        }
-      } catch (e) {
-        console.error('Failed to parse stored analysis:', e);
-      }
-    }
-    
-    // If user is logged in, load from database (overrides session storage)
+    // Load from database for authenticated users only
     if (user) {
       supabase
         .from("profiles")
@@ -169,7 +151,6 @@ const GetStarted = () => {
   }, [user]);
 
   if (loading) return null;
-  // Allow access without login - demo mode
 
   const handleAnalyze = async () => {
     const trimmed = url.trim();
@@ -192,10 +173,7 @@ const GetStarted = () => {
         const analysisData = { ...data.data, website_url: trimmed };
         setResult(analysisData);
 
-        // Save to session storage (works for all users)
-        sessionStorage.setItem('siteAnalysis', JSON.stringify(analysisData));
-
-        // If user is logged in, also save to database
+        // Save to database (authentication required)
         if (user) {
           const allKeywords = [...(data.data.flatKeywords || []), ...(data.data.flatLongTail || [])];
           const { error: updateErr } = await supabase
@@ -208,15 +186,11 @@ const GetStarted = () => {
             .eq("user_id", user.id);
 
           if (updateErr) {
-            toast({ title: "Analysis complete", description: "Saved to session (database save failed).", variant: "default" });
+            toast({ title: "Analysis complete", description: "Database save failed.", variant: "destructive" });
           } else {
             setSaved(true);
             toast({ title: "Analysis saved", description: "Your niche and keywords have been saved." });
           }
-        } else {
-          // Not logged in - just confirm session storage save
-          setSaved(true);
-          toast({ title: "Analysis complete", description: "Results saved to your session." });
         }
       } else {
         toast({ title: "Unexpected response", description: "Please try again.", variant: "destructive" });
