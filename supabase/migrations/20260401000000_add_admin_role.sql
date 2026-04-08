@@ -61,27 +61,37 @@ USING (
   )
 );
 
--- Admin policies for subscriptions (admins can see all subscriptions)
-DROP POLICY IF EXISTS "Admins can view all subscriptions" ON public.subscriptions;
-CREATE POLICY "Admins can view all subscriptions"
-ON public.subscriptions FOR SELECT
-USING (
-  EXISTS (
-    SELECT 1 FROM public.profiles p
-    WHERE p.user_id = auth.uid() AND p.role = 'admin'
-  )
-);
+-- Admin policies for subscriptions (only if table exists)
+DO $$ 
+BEGIN
+  IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'subscriptions') THEN
+    DROP POLICY IF EXISTS "Admins can view all subscriptions" ON public.subscriptions;
+    CREATE POLICY "Admins can view all subscriptions"
+    ON public.subscriptions FOR SELECT
+    USING (
+      EXISTS (
+        SELECT 1 FROM public.profiles p
+        WHERE p.user_id = auth.uid() AND p.role = 'admin'
+      )
+    );
+  END IF;
+END $$;
 
--- Admin policies for publishing_logs (admins can see all logs)
-DROP POLICY IF EXISTS "Admins can view all publishing logs" ON public.publishing_logs;
-CREATE POLICY "Admins can view all publishing logs"
-ON public.publishing_logs FOR SELECT
-USING (
-  EXISTS (
-    SELECT 1 FROM public.profiles p
-    WHERE p.user_id = auth.uid() AND p.role = 'admin'
-  )
-);
+-- Admin policies for publishing_logs (only if table exists)
+DO $$ 
+BEGIN
+  IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'publishing_logs') THEN
+    DROP POLICY IF EXISTS "Admins can view all publishing logs" ON public.publishing_logs;
+    CREATE POLICY "Admins can view all publishing logs"
+    ON public.publishing_logs FOR SELECT
+    USING (
+      EXISTS (
+        SELECT 1 FROM public.profiles p
+        WHERE p.user_id = auth.uid() AND p.role = 'admin'
+      )
+    );
+  END IF;
+END $$;
 
 -- Comment: To make a user an admin, run:
 -- UPDATE public.profiles SET role = 'admin' WHERE user_id = '[USER_UUID]';
