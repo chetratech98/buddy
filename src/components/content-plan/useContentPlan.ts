@@ -86,10 +86,10 @@ export function useContentPlan() {
     ]).then(([profileRes, serpRes, planRes]) => {
       if (controller.signal.aborted) return;
 
-      if (profileRes.data?.niche) setNiche(profileRes.data.niche);
+      if (profileRes.data?.niche != null) setNiche(profileRes.data.niche ?? "");
       if (profileRes.data?.keywords?.length) setKeywords(profileRes.data.keywords);
-      if ((profileRes.data as any)?.org_goals) setOrgGoals((profileRes.data as any).org_goals);
-      if ((profileRes.data as any)?.org_vision) setOrgVision((profileRes.data as any).org_vision);
+      if ((profileRes.data as any)?.org_goals != null) setOrgGoals((profileRes.data as any).org_goals ?? "");
+      if ((profileRes.data as any)?.org_vision != null) setOrgVision((profileRes.data as any).org_vision ?? "");
 
       if (serpRes.data) {
         setSerpInsights((serpRes.data as any).analysis);
@@ -247,13 +247,18 @@ export function useContentPlan() {
       toast({ title: "Content plan generated & saved!", description: `${newPlan.length} posts planned.` });
     } catch (e: any) {
       clearInterval(progressInterval);
-      // Fallback to demo data on error
-      setPlan(DEMO_CONTENT_PLAN);
-      toast({ 
-        title: "Using demo data", 
-        description: "API unavailable. Showing sample content plan.", 
-        variant: "destructive" 
-      });
+      console.error("Content plan generation error:", e);
+      if (user) {
+        // Logged in — show real error, don't silently use demo
+        toast({
+          title: "Generation failed",
+          description: e?.message || "Failed to generate content plan. Please try again.",
+          variant: "destructive",
+        });
+      } else {
+        setPlan(DEMO_CONTENT_PLAN);
+        toast({ title: "Demo content plan loaded", description: "Sign in to generate real plans.", variant: "destructive" });
+      }
     } finally {
       setGenerating(false);
       setTimeout(() => setGenerationProgress(0), 1000);
