@@ -8,22 +8,29 @@ const Hero = () => {
   const { user } = useAuth();
 
   return (
-    <section className="hero-bg-gradient relative overflow-hidden">
-      {/* Ambient glow */}
-      <div className="absolute top-10 right-[8%] w-[600px] h-[600px] bg-primary/5 rounded-full blur-[150px] pointer-events-none" />
-      <div className="absolute bottom-0 left-[5%] w-[400px] h-[400px] bg-accent/8 rounded-full blur-[120px] pointer-events-none" />
+    <section className="hero-bg-gradient relative overflow-hidden min-h-[90vh] flex items-center">
+      {/* Enhanced ambient glow - multiple layers */}
+      <div className="absolute top-0 right-[10%] w-[700px] h-[700px] bg-primary/8 rounded-full blur-[180px] pointer-events-none animate-pulse-slow" />
+      <div className="absolute bottom-0 left-[8%] w-[500px] h-[500px] bg-accent/10 rounded-full blur-[150px] pointer-events-none animate-pulse-slow" style={{ animationDelay: "2s" }} />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary-glow/5 rounded-full blur-[200px] pointer-events-none" />
+      
+      {/* Floating orbs */}
+      <div className="absolute top-20 left-[15%] w-3 h-3 bg-primary rounded-full blur-sm opacity-40 float" />
+      <div className="absolute top-40 right-[20%] w-2 h-2 bg-accent rounded-full blur-sm opacity-30 float" style={{ animationDelay: "1s" }} />
+      <div className="absolute bottom-32 left-[25%] w-4 h-4 bg-primary-glow rounded-full blur-sm opacity-25 float" style={{ animationDelay: "3s" }} />
 
-      <div className="max-w-7xl mx-auto px-6 pt-20 pb-24">
-        {/* Badge */}
+      <div className="max-w-7xl mx-auto px-6 py-20 relative z-10">
+        {/* Enhanced Badge */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="mb-10"
+          transition={{ duration: 0.6, ease: "easeOut" }}
+          className="mb-12 flex justify-center lg:justify-start"
         >
-          <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/8 text-primary text-sm font-medium border border-primary/15">
-            <Sparkles size={14} />
+          <span className="inline-flex items-center gap-2.5 px-5 py-2.5 rounded-full bg-gradient-to-r from-primary/10 via-primary/15 to-accent/10 text-primary text-sm font-semibold border border-primary/20 shadow-lg backdrop-blur-sm">
+            <Sparkles size={16} className="animate-pulse" />
             AI-Powered SEO Content Generator
+            <span className="ml-1 px-2 py-0.5 bg-primary text-primary-foreground text-xs rounded-full">NEW</span>
           </span>
         </motion.div>
 
@@ -32,34 +39,68 @@ const Hero = () => {
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7 }}
+            transition={{ duration: 0.8, delay: 0.1, ease: "easeOut" }}
           >
-            <h1 className="text-4xl sm:text-5xl lg:text-[3.5rem] font-bold leading-[1.08] text-foreground">
+            <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold leading-[1.1] text-foreground">
               Daily Blog Posts,{" "}
               <br className="hidden sm:block" />
-              <span className="text-gradient">Automatically</span>{" "}
+              <span className="animated-gradient bg-clip-text text-transparent">Automatically</span>{" "}
               <br className="hidden sm:block" />
-              Optimized
+              <span className="relative">
+                Optimized
+                <svg className="absolute -bottom-2 left-0 w-full" height="12" viewBox="0 0 300 12" fill="none">
+                  <path d="M2 10C50 5, 100 2, 150 3C200 4, 250 7, 298 10" stroke="url(#paint0_linear)" strokeWidth="3" strokeLinecap="round"/>
+                  <defs>
+                    <linearGradient id="paint0_linear" x1="0" y1="0" x2="300" y2="0" gradientUnits="userSpaceOnUse">
+                      <stop stopColor="hsl(var(--primary))" />
+                      <stop offset="0.5" stopColor="hsl(var(--accent-foreground))" />
+                      <stop offset="1" stopColor="hsl(var(--primary))" />
+                    </linearGradient>
+                  </defs>
+                </svg>
+              </span>
             </h1>
-            <p className="mt-6 text-lg text-muted-foreground max-w-lg leading-relaxed">
-              Our AI analyzes the top 10 Google results for your keywords and creates comprehensive, SEO-optimized blog posts daily.
+            <p className="mt-8 text-xl text-muted-foreground max-w-lg leading-relaxed">
+              Our AI analyzes the <span className="font-semibold text-foreground">top 10 Google results</span> for your keywords and creates comprehensive, SEO-optimized blog posts daily.
             </p>
 
-            {/* CTAs */}
-            <div className="mt-10 flex flex-col sm:flex-row items-start gap-4">
+            {/* Enhanced CTAs */}
+            <div className="mt-12 flex flex-col sm:flex-row items-start gap-4">
               <button
                 onClick={() => navigate(user ? "/get-started" : "/auth")}
-                className="hero-btn-primary flex items-center gap-2 text-base"
+                className="group hero-btn-primary flex items-center gap-2.5 text-base font-bold shadow-2xl"
               >
-                {user ? "Analyze My Site" : "Start Free Trial"} <ArrowRight size={18} />
+                {user ? "Analyze My Site" : "Start Free Trial"}
+                <ArrowRight size={20} className="transition-transform group-hover:translate-x-1" />
               </button>
               <button 
                 onClick={() => navigate(user ? "/dashboard" : "/auth")}
-                className="hero-btn-secondary text-base"
+                className="hero-btn-secondary text-base font-semibold"
               >
                 {user ? "Go to Dashboard" : "Sign In"}
               </button>
             </div>
+
+            {/* Trust badges */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.6, delay: 0.4 }}
+              className="mt-10 flex items-center gap-6 text-sm text-muted-foreground"
+            >
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5 text-success" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
+                </svg>
+                <span className="font-medium">No credit card required</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5 text-success" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
+                </svg>
+                <span className="font-medium">Cancel anytime</span>
+              </div>
+            </motion.div>
           </motion.div>
 
           {/* Right: Analytics Dashboard */}
