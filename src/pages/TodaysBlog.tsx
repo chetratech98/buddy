@@ -60,7 +60,7 @@ const TodaysBlog = () => {
           .eq("user_id", user!.id)
           .order("created_at", { ascending: false })
           .limit(1)
-          .single(),
+          .maybeSingle(),
         supabase
           .from("blog_posts")
           .select("*")
@@ -71,7 +71,7 @@ const TodaysBlog = () => {
           .from("profiles")
           .select("niche, keywords")
           .eq("user_id", user!.id)
-          .single(),
+          .maybeSingle(),
       ]);
 
       if (postsRes.data && postsRes.data.length > 0) {

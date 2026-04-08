@@ -133,7 +133,7 @@ const GetStarted = () => {
         .from("profiles")
         .select("website_url, niche, keywords")
         .eq("user_id", user.id)
-        .single()
+        .maybeSingle()
         .then(({ data }) => {
           if (data?.website_url) {
             setUrl(data.website_url);

@@ -228,7 +228,7 @@ const SeoAnalysis = () => {
         .from("profiles")
         .select("niche, keywords")
         .eq("user_id", user.id)
-        .single()
+        .maybeSingle()
         .then(({ data }) => {
           if (data?.niche) setNiche(data.niche);
           if (data?.keywords?.length) setKeywords(data.keywords);

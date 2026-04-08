@@ -68,21 +68,21 @@ export function useContentPlan() {
         .from("profiles")
         .select("niche, keywords, org_goals, org_vision")
         .eq("user_id", user.id)
-        .single(),
+        .maybeSingle(),
       supabase
         .from("serp_analyses" as any)
         .select("analysis, keywords")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(1)
-        .single(),
+        .maybeSingle(),
       supabase
         .from("content_plans" as any)
         .select("*")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(1)
-        .single(),
+        .maybeSingle(),
     ]).then(([profileRes, serpRes, planRes]) => {
       if (controller.signal.aborted) return;
 
@@ -189,7 +189,7 @@ export function useContentPlan() {
           .eq("user_id", user!.id)
           .order("created_at", { ascending: false })
           .limit(1)
-          .single();
+          .maybeSingle();
         if (freshSerp) {
           freshSerpInsights = (freshSerp as any).analysis;
           setSerpInsights(freshSerpInsights);

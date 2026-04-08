@@ -46,7 +46,7 @@ const Profile = () => {
       .from("profiles")
       .select("display_name, avatar_url, org_goals, org_vision")
       .eq("user_id", user!.id)
-      .single();
+      .maybeSingle();
 
     if (!error && data) {
       setDisplayName(data.display_name || "");
