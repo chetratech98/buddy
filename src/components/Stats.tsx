@@ -2,9 +2,10 @@ import { motion, useInView } from "framer-motion";
 import { useRef } from "react";
 
 const stats = [
-  { value: "10,000+", label: "ChatGPT mentions secured" },
-  { value: "50,000+", label: "Articles Created" },
-  { value: "25,000+", label: "Backlinks Added" },
+  { value: "50,000+", label: "AI Blog Posts Created" },
+  { value: "2,400+", label: "Businesses Growing With Buddy" },
+  { value: "3.2×", label: "Average Traffic Increase" },
+  { value: "8 hrs", label: "Saved Per Week Per User" },
 ];
 
 const Stats = () => {
@@ -16,7 +17,7 @@ const Stats = () => {
       <div className="max-w-5xl mx-auto bg-stats rounded-3xl py-20 px-8 relative overflow-hidden">
         {/* Subtle pattern overlay */}
         <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-primary/5 pointer-events-none" />
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-10 text-center relative">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-10 text-center relative">
           {stats.map((stat, i) => (
             <motion.div
               key={stat.label}

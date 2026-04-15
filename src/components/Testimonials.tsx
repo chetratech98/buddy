@@ -4,19 +4,22 @@ import { Star, Quote } from "lucide-react";
 
 const testimonials = [
   {
-    quote: "Our DR went from 13 to 36 in 4 months, our traffic doubled.",
+    quote: "Our domain rating went from 13 to 36 in 4 months and organic traffic doubled. Buddy is the best ROI we've ever made on marketing tools.",
     name: "Lorenzo Nicolini",
     role: "Founder, Moonb",
+    metric: "DR 13 → 36 in 4 months",
   },
   {
-    quote: "The biggest visible shift: our brand started getting picked up in AI answers.",
+    quote: "The biggest visible shift: our brand started appearing in AI-generated answers on Google and ChatGPT. That's pure brand authority we couldn't buy.",
     name: "Aidan Cramer",
     role: "Co-Founder, AIApply",
+    metric: "AI answer mentions 5× increase",
   },
   {
-    quote: "Cutting client SEO time from 40-50 hours to a streamlined content process.",
+    quote: "We cut client SEO deliverable time from 40–50 hours per month down to under 6. That's an entire team member's workload automated.",
     name: "Olaf van Gastel",
     role: "Founder, Bright Brands",
+    metric: "44 hrs/month saved per client",
   },
 ];
 
@@ -51,9 +54,14 @@ const Testimonials = () => {
                   <Star key={j} size={14} className="fill-[hsl(var(--warning))] text-[hsl(var(--warning))]" />
                 ))}
               </div>
-              <blockquote className="text-foreground font-medium leading-relaxed mb-6 flex-1">
+              <blockquote className="text-foreground font-medium leading-relaxed mb-4 flex-1">
                 "{t.quote}"
               </blockquote>
+              <div className="mb-4">
+                <span className="inline-block text-xs font-semibold px-3 py-1 rounded-full bg-primary/10 text-primary border border-primary/20">
+                  {t.metric}
+                </span>
+              </div>
               <div className="flex items-center gap-3 pt-4 border-t border-border">
                 <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary">
                   {t.name[0]}

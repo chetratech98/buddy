@@ -29,7 +29,7 @@ const Hero = () => {
         >
           <span className="inline-flex items-center gap-2.5 px-5 py-2.5 rounded-full bg-gradient-to-r from-primary/10 via-primary/15 to-accent/10 text-primary text-sm font-semibold border border-primary/20 shadow-lg backdrop-blur-sm">
             <Sparkles size={16} className="animate-pulse" />
-            AI-Powered SEO Content Generator
+            AI-Powered SEO Content Platform
             <span className="ml-1 px-2 py-0.5 bg-primary text-primary-foreground text-xs rounded-full">NEW</span>
           </span>
         </motion.div>
@@ -42,12 +42,12 @@ const Hero = () => {
             transition={{ duration: 0.8, delay: 0.1, ease: "easeOut" }}
           >
             <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold leading-[1.1] text-foreground">
-              Daily Blog Posts,{" "}
+              Rank Higher.{" "}
               <br className="hidden sm:block" />
-              <span className="animated-gradient bg-clip-text text-transparent">Automatically</span>{" "}
+              <span className="animated-gradient bg-clip-text text-transparent">Write Less.</span>{" "}
               <br className="hidden sm:block" />
               <span className="relative">
-                Optimized
+                Grow Faster.
                 <svg className="absolute -bottom-2 left-0 w-full" height="12" viewBox="0 0 300 12" fill="none">
                   <path d="M2 10C50 5, 100 2, 150 3C200 4, 250 7, 298 10" stroke="url(#paint0_linear)" strokeWidth="3" strokeLinecap="round"/>
                   <defs>
@@ -61,7 +61,7 @@ const Hero = () => {
               </span>
             </h1>
             <p className="mt-8 text-xl text-muted-foreground max-w-lg leading-relaxed">
-              Our AI analyzes the <span className="font-semibold text-foreground">top 10 Google results</span> for your keywords and creates comprehensive, SEO-optimized blog posts daily.
+              Buddy analyzes the <span className="font-semibold text-foreground">top 10 Google results</span> for your keywords and publishes SEO-optimized blog posts to your site — every single day, on autopilot.
             </p>
 
             {/* Enhanced CTAs */}
@@ -220,9 +220,10 @@ const Hero = () => {
           className="mt-24 pt-10 border-t border-border/60 flex flex-wrap gap-16"
         >
           {[
-            { value: "10K+", label: "Posts Generated" },
-            { value: "500+", label: "Active Users" },
-            { value: "98%", label: "SEO Score Avg" },
+            { value: "50K+", label: "Posts Generated" },
+            { value: "2,400+", label: "Active Users" },
+            { value: "97%", label: "Avg SEO Score" },
+            { value: "4.9★", label: "User Rating" },
           ].map((stat) => (
             <div key={stat.label}>
               <div className="text-3xl font-bold text-gradient">{stat.value}</div>

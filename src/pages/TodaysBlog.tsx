@@ -19,16 +19,35 @@ import { exportAsMarkdown, exportAsHTML } from "@/lib/export-utils";
 
 import { PageShell } from "@/components/PageShell";
 
+// Typed shape for a single content plan item
+interface ContentPlanItem {
+  day: number | string;
+  title: string;
+  type: string;
+  keyword: string;
+  long_tail_keyword?: string;
+  description?: string;
+}
+
+interface ExistingPost {
+  id: string;
+  title: string;
+  excerpt: string;
+  content: string;
+  keywords: string[];
+  status: string;
+}
+
 const TodaysBlog = () => {
-  const { user, signOut, loading: authLoading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [todayItem, setTodayItem] = useState<any>(null);
-  const [existingPost, setExistingPost] = useState<any>(null);
+  const [todayItem, setTodayItem] = useState<ContentPlanItem | null>(null);
+  const [existingPost, setExistingPost] = useState<ExistingPost | null>(null);
   const [title, setTitle] = useState("");
   const [excerpt, setExcerpt] = useState("");
   const [content, setContent] = useState("");
@@ -55,7 +74,7 @@ const TodaysBlog = () => {
 
       const [planRes, postsRes, profileRes] = await Promise.all([
         supabase
-          .from("content_plans" as any)
+          .from("content_plans")
           .select("*")
           .eq("user_id", user!.id)
           .order("created_at", { ascending: false })
@@ -85,16 +104,16 @@ const TodaysBlog = () => {
       }
 
       if (planRes.data) {
-        const plan = planRes.data as any;
+        const plan = planRes.data;
         const planCreatedAt = new Date(plan.created_at);
         const now = new Date();
         const diffTime = now.getTime() - planCreatedAt.getTime();
         const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
         const todayDay = (diffDays % 30) + 1;
 
-        const items = plan.items || [];
-        const todayContent = items.find((item: any) => Number(item.day) === todayDay);
-        setTodayItem(todayContent || null);
+        const items = Array.isArray(plan.items) ? (plan.items as ContentPlanItem[]) : [];
+        const todayContent = items.find((item) => Number(item.day) === todayDay);
+        setTodayItem(todayContent ?? null);
         if (plan.tone) setTone(plan.tone);
       }
     } catch (e) {
@@ -140,8 +159,8 @@ const TodaysBlog = () => {
       setExistingPost(saved);
       setAlreadyPostedToday(true);
       toast({ title: "Blog generated!", description: "Your today's blog post has been created as a draft." });
-    } catch (e: any) {
-      toast({ title: "Generation failed", description: e.message, variant: "destructive" });
+    } catch (e) {
+      toast({ title: "Generation failed", description: e instanceof Error ? e.message : "Generation failed", variant: "destructive" });
     } finally {
       setGenerating(false);
     }

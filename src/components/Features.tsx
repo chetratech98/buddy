@@ -1,37 +1,57 @@
 import { motion, useInView } from "framer-motion";
 import { useRef } from "react";
-import { Bot, Clock, TrendingUp, FileText, Link, Crosshair } from "lucide-react";
+import { Bot, Clock, TrendingUp, FileText, Link, Crosshair, CalendarDays, Send, BarChart2, ShieldCheck } from "lucide-react";
 
 const features = [
   {
     icon: Bot,
     title: "AI-Powered Research",
-    description: "Our AI analyzes top 10 Google results to understand what ranks and creates superior content.",
+    description: "Our AI analyzes the top 10 Google results for each keyword and creates superior, comprehensive content that outranks competitors.",
   },
   {
     icon: Clock,
     title: "Daily Automation",
-    description: "Set your keywords and schedule. Wake up to fresh, SEO-optimized content every morning.",
+    description: "Set your keywords and schedule once. Wake up to fresh, SEO-optimized blog posts every morning — zero manual effort.",
   },
   {
     icon: TrendingUp,
     title: "SEO Optimized",
-    description: "Every post is optimized with the right keywords, meta tags, and structure to rank higher.",
+    description: "Every post is structured with the right keywords, semantic headings, meta tags, and internal link suggestions to rank higher faster.",
+  },
+  {
+    icon: Crosshair,
+    title: "Competitor SERP Analysis",
+    description: "Analyze top-ranking competitors in seconds. Uncover their keyword gaps, content strategies, and content score benchmarks.",
+  },
+  {
+    icon: CalendarDays,
+    title: "Content Calendar",
+    description: "Plan, schedule, and visualize your entire publishing pipeline. Drag-and-drop posts across dates to maintain a consistent cadence.",
+  },
+  {
+    icon: Send,
+    title: "Multi-Platform Publishing",
+    description: "Publish directly to WordPress and Medium with one click. Your content reaches every channel without copy-pasting.",
+  },
+  {
+    icon: BarChart2,
+    title: "Analytics Dashboard",
+    description: "Track post performance, keyword rankings, and publishing trends from a single, intuitive dashboard.",
   },
   {
     icon: FileText,
-    title: "Quality Content",
-    description: "Well-researched, comprehensive articles that provide real value to your readers.",
+    title: "30-Day Content Plans",
+    description: "Generate a complete month of strategic blog topics, long-tail keywords, and posting schedules tailored to your niche.",
   },
   {
     icon: Link,
     title: "Smart References",
-    description: "Automatic citations and references to authoritative sources from top-ranking content.",
+    description: "Automatic citations and references to authoritative sources, boosting E-E-A-T signals that Google's algorithm rewards.",
   },
   {
-    icon: Crosshair,
-    title: "Keyword Targeting",
-    description: "Target multiple keywords simultaneously and build topical authority in your niche.",
+    icon: ShieldCheck,
+    title: "Brand Voice Control",
+    description: "Choose from Professional, Casual, Technical, or Friendly tones. Set your organization's goals to shape every AI-generated article.",
   },
 ];
 

@@ -4,10 +4,20 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Plus, FileText, Clock, CheckCircle, Trash2, Loader2, Download, Code, FileDown,
-  Calendar, Eye, Filter, Search, Globe
+  Calendar, Eye, Filter, Search, AlertTriangle, Pencil,
 } from "lucide-react";
 import { exportAsMarkdown, exportAsHTML } from "@/lib/export-utils";
 import { useToast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 import { PageShell } from "@/components/PageShell";
 import { cn } from "@/lib/utils";
@@ -45,6 +55,7 @@ const Posts = () => {
   const [exportMenu, setExportMenu] = useState<ExportMenuOpen>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<BlogPost | null>(null);
 
   // Allow access without login - demo mode available
 
@@ -63,14 +74,16 @@ const Posts = () => {
     setLoading(false);
   };
 
-  const handleDelete = async (id: string) => {
-    const { error } = await supabase.from("blog_posts").delete().eq("id", id);
+  const handleDeleteConfirmed = async () => {
+    if (!deleteTarget) return;
+    const { error } = await supabase.from("blog_posts").delete().eq("id", deleteTarget.id);
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
-      setPosts(posts.filter((p) => p.id !== id));
+      setPosts(posts.filter((p) => p.id !== deleteTarget.id));
       toast({ title: "Post deleted" });
     }
+    setDeleteTarget(null);
   };
 
   const handleExport = (post: BlogPost, format: "html" | "markdown") => {
@@ -229,6 +242,13 @@ const Posts = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => navigate(`/posts/${post.id}/edit`)}
+                    className="text-muted-foreground hover:text-foreground transition-colors p-2 rounded-lg hover:bg-muted/50"
+                    title="Edit post"
+                  >
+                    <Pencil size={16} />
+                  </button>
                   <div className="relative">
                     <button
                       onClick={() => setExportMenu(exportMenu === post.id ? null : post.id)}
@@ -255,8 +275,9 @@ const Posts = () => {
                     )}
                   </div>
                   <button
-                    onClick={() => handleDelete(post.id)}
+                    onClick={() => setDeleteTarget(post)}
                     className="text-muted-foreground hover:text-destructive transition-colors p-2 rounded-lg hover:bg-muted/50"
+                    title="Delete post"
                   >
                     <Trash2 size={16} />
                   </button>
@@ -266,6 +287,28 @@ const Posts = () => {
           })}
         </div>
       )}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle size={18} className="text-destructive" />
+              Delete post?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              <span className="font-semibold text-foreground">"{deleteTarget?.title}"</span> will be permanently deleted. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirmed}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </PageShell>
   );
 };

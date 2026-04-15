@@ -3,181 +3,401 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
   "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
   "Access-Control-Max-Age": "86400",
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: count words in markdown text
+// ─────────────────────────────────────────────────────────────────────────────
+function countWords(text: string): number {
+  return text
+    .replace(/```[\s\S]*?```/g, "") // strip code blocks
+    .replace(/`[^`]+`/g, "")        // strip inline code
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // strip links, keep text
+    .replace(/[#*_~>|]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 0).length;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: fetch top competitor URLs from SerpApi
+// ─────────────────────────────────────────────────────────────────────────────
+async function fetchCompetitorUrls(
+  keyword: string,
+  serpApiKey: string,
+  limit = 5
+): Promise<Array<{ url: string; title: string; domain: string; snippet: string }>> {
+  try {
+    const url = new URL("https://serpapi.com/search.json");
+    url.searchParams.set("q", keyword);
+    url.searchParams.set("api_key", serpApiKey);
+    url.searchParams.set("engine", "google");
+    url.searchParams.set("num", "10");
+    url.searchParams.set("gl", "us");
+    url.searchParams.set("hl", "en");
+
+    const res = await fetch(url.toString(), {
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!res.ok) return [];
+
+    const data = await res.json();
+    return (data.organic_results || [])
+      .slice(0, limit)
+      .filter((r: any) => r.link)
+      .map((r: any) => ({
+        url: r.link,
+        title: r.title || "",
+        domain: r.displayed_link || "",
+        snippet: r.snippet || "",
+      }));
+  } catch {
+    return [];
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: scrape a single URL with Firecrawl, return cleaned markdown
+// ─────────────────────────────────────────────────────────────────────────────
+async function scrapeUrl(url: string, firecrawlKey: string): Promise<string> {
+  try {
+    const res = await fetch("https://api.firecrawl.dev/v1/scrape", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${firecrawlKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        url,
+        formats: ["markdown"],
+        onlyMainContent: true,
+        waitFor: 2000,
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return "";
+    const data = await res.json();
+    const markdown = (data?.data?.markdown || data?.markdown || "").slice(0, 4000);
+    return markdown;
+  } catch {
+    return "";
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: build competitor context string from scraped pages
+// ─────────────────────────────────────────────────────────────────────────────
+function buildCompetitorContext(
+  competitors: Array<{ url: string; title: string; domain: string; snippet: string }>,
+  scrapedContents: string[]
+): string {
+  let ctx = "";
+  for (let i = 0; i < competitors.length; i++) {
+    const c = competitors[i];
+    const body = scrapedContents[i];
+    if (!body && !c.snippet) continue;
+
+    ctx += `\n### Competitor ${i + 1}: ${c.title}\n`;
+    ctx += `Domain: ${c.domain}\n`;
+    if (c.snippet) ctx += `Google Snippet: ${c.snippet}\n`;
+    if (body) {
+      ctx += `Content Summary:\n${body}\n`;
+    }
+  }
+  return ctx.trim();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: call OpenAI chat completions
+// ─────────────────────────────────────────────────────────────────────────────
+async function callOpenAI(
+  apiKey: string,
+  messages: Array<{ role: string; content: string }>,
+  temperature = 0.7,
+  model = "gpt-4o-mini"
+): Promise<string> {
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ model, temperature, messages }),
+  });
+
+  if (!res.ok) {
+    const status = res.status;
+    if (status === 429) throw new Error("RATE_LIMIT");
+    if (status === 402) throw new Error("CREDITS_EXHAUSTED");
+    throw new Error(`openai_error_${status}`);
+  }
+
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content || "";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: parse JSON from LLM output (strips fences)
+// ─────────────────────────────────────────────────────────────────────────────
+function parseJSON<T>(raw: string): T | null {
+  try {
+    const cleaned = raw
+      .replace(/```json\s*/gi, "")
+      .replace(/```\s*/gi, "")
+      .trim();
+    return JSON.parse(cleaned) as T;
+  } catch {
+    // Try to extract the first {...} block
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (match) {
+      try { return JSON.parse(match[0]) as T; } catch { /* fall through */ }
+    }
+    return null;
+  }
+}
+
+interface BlogPost {
+  title: string;
+  excerpt: string;
+  content: string;
+  keywords: string[];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main handler
+// ─────────────────────────────────────────────────────────────────────────────
 serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 200, headers: corsHeaders });
+  }
+
+  const jsonResponse = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
 
   try {
-    // Auth check
+    // ── Auth ──────────────────────────────────────────────────────────────────
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "Unauthorized" }, 401);
     }
+
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_ANON_KEY") ?? "",
       { global: { headers: { Authorization: authHeader } } }
     );
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    if (authError || !user) return jsonResponse({ error: "Unauthorized" }, 401);
 
-    // Input validation
+    // ── Input validation ──────────────────────────────────────────────────────
     const body = await req.json();
-    const topic = typeof body.topic === "string" ? body.topic.trim().slice(0, 1000) : "";
+    const topic    = typeof body.topic    === "string" ? body.topic.trim().slice(0, 1000)   : "";
     const keywords = typeof body.keywords === "string" ? body.keywords.trim().slice(0, 500) : "";
-    const tone = typeof body.tone === "string" ? body.tone.trim().slice(0, 50) : "";
+    const tone     = typeof body.tone     === "string" ? body.tone.trim().slice(0, 50)      : "professional";
+    const template = body.template ?? null;
 
-    if (!topic) {
-      return new Response(JSON.stringify({ error: "Topic is required" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    if (!topic) return jsonResponse({ error: "Topic is required" }, 400);
 
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+    const OPENAI_API_KEY  = Deno.env.get("OPENAI_API_KEY");
+    const SERP_API_KEY    = Deno.env.get("SERP_API_KEY");
+    const FIRECRAWL_KEY   = Deno.env.get("FIRECRAWL_API_KEY");
+
     if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not configured");
 
-    const systemPrompt = `You are an expert SEO blog writer. Write high-quality, engaging blog posts optimized for search engines.
+    // ── PHASE 1: Competitor Research (real live data) ─────────────────────────
+    // Use the first keyword (or topic) as the primary search query
+    const primaryKeyword = keywords
+      ? keywords.split(",")[0].trim()
+      : topic.slice(0, 100);
 
-When given a topic, generate a complete blog post with:
-- An attention-grabbing title
-- A compelling excerpt (1-2 sentences)
-- Well-structured content with markdown formatting (headings, lists, bold text)
-- Natural keyword integration
-- At least 500 words
+    let competitorContext = "";
+    let competitorUrls: Array<{ url: string; title: string; domain: string; snippet: string }> = [];
 
-Respond in valid JSON format:
-{
-  "title": "Blog Post Title",
-  "excerpt": "A short compelling excerpt...",
-  "content": "Full markdown content...",
-  "keywords": ["keyword1", "keyword2", "keyword3"]
-}`;
+    if (SERP_API_KEY) {
+      console.log(`[generate-blog] Fetching SERP results for: "${primaryKeyword}"`);
+      competitorUrls = await fetchCompetitorUrls(primaryKeyword, SERP_API_KEY, 5);
+      console.log(`[generate-blog] Found ${competitorUrls.length} competitor URLs`);
 
-    const userPrompt = `Write a blog post about: ${topic}${keywords ? `\n\nTarget keywords: ${keywords}` : ""}${tone ? `\n\nTone: ${tone}` : ""}`;
-
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        temperature: 0.7,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limit exceeded. Please try again in a moment." }), {
-          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+      if (competitorUrls.length > 0 && FIRECRAWL_KEY) {
+        console.log("[generate-blog] Scraping competitor content with Firecrawl...");
+        // Scrape top 3 in parallel (balance speed vs. context size)
+        const scrapedContents = await Promise.all(
+          competitorUrls.slice(0, 3).map((c) => scrapeUrl(c.url, FIRECRAWL_KEY))
+        );
+        competitorContext = buildCompetitorContext(competitorUrls.slice(0, 3), scrapedContents);
+        console.log(
+          `[generate-blog] Competitor context built: ${competitorContext.length} chars`
+        );
+      } else if (competitorUrls.length > 0) {
+        // No Firecrawl — use SERP snippets only
+        competitorContext = buildCompetitorContext(competitorUrls, []);
+        console.log("[generate-blog] Using SERP snippets only (no Firecrawl key)");
       }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "AI usage limit reached. Please add credits to your workspace." }), {
-          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      console.error("AI gateway error:", response.status);
-      return new Response(JSON.stringify({ error: "Failed to generate content" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
     }
 
-    const data = await response.json();
-    const rawContent = data.choices?.[0]?.message?.content || "";
+    // ── PHASE 2: Generate blog post (grounded in competitor data) ─────────────
+    const competitorSection = competitorContext
+      ? `\n\n## LIVE COMPETITOR INTELLIGENCE (from current Google top results)\nAnalyze these top-ranking pages and CREATE SUPERIOR content that covers their topics more comprehensively, fills their gaps, and provides more unique value:\n\n${competitorContext}\n\n### Your content MUST:\n- Cover all major topics the competitors cover PLUS additional unique angles they miss\n- Be longer and more comprehensive than competitors (target 2,000+ words)\n- Include unique insights, data points, or frameworks not found in any competitor\n- Answer questions competitors leave unanswered`
+      : "";
 
-    let parsed;
-    try {
-      const jsonStr = rawContent.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-      parsed = JSON.parse(jsonStr);
-    } catch {
-      parsed = {
+    const templateSection = template
+      ? `\n\n## CONTENT TEMPLATE TO FOLLOW\nName: ${template.name}\nStructure sections: ${template.structure.join(", ")}\nInstructions: ${template.promptTemplate}`
+      : "";
+
+    const systemPrompt = `You are an expert SEO content writer with deep knowledge of Google's E-E-A-T principles (Experience, Expertise, Authoritativeness, Trust). You write comprehensive, data-driven blog posts that outrank competitors.
+
+QUALITY STANDARDS:
+- Minimum 2,000 words (aim for 2,500–3,500 for competitive keywords)
+- Use proper markdown: H2 (##) and H3 (###) headings, bullet lists, bold key terms
+- Include a FAQ section at the end with 3–5 questions (helps win People Also Ask SERP features)
+- Natural keyword integration (1.5–2% density) — never keyword-stuffed
+- Factual, specific, and actionable — no vague filler content
+- Strong intro (hook the reader in the first 2 sentences) and clear conclusion with CTA
+
+Respond in VALID JSON ONLY. No markdown fences outside the JSON.
+JSON format:
+{
+  "title": "SEO-optimized title (50–70 chars)",
+  "excerpt": "Compelling 1–2 sentence summary for meta description (120–160 chars)",
+  "content": "Full markdown content (2,000+ words)",
+  "keywords": ["keyword1", "keyword2", ...],
+  "wordCount": <integer>,
+  "competitorUrlsAnalyzed": <integer>
+}`;
+
+    const userPrompt = `Write a comprehensive, SEO-optimized blog post on this topic:
+
+TOPIC: ${topic}
+${keywords ? `TARGET KEYWORDS: ${keywords}` : ""}
+TONE: ${tone}
+${competitorSection}
+${templateSection}
+
+IMPORTANT: The content field must be a complete, polished article of 2,000+ words. Include a FAQ section at the end.`;
+
+    console.log("[generate-blog] Calling OpenAI for generation...");
+    const rawGeneration = await callOpenAI(
+      OPENAI_API_KEY,
+      [
+        { role: "system", content: systemPrompt },
+        { role: "user",   content: userPrompt },
+      ],
+      0.7
+    );
+
+    let post = parseJSON<BlogPost & { wordCount?: number; competitorUrlsAnalyzed?: number }>(rawGeneration);
+
+    if (!post) {
+      post = {
         title: "Generated Blog Post",
         excerpt: "",
-        content: rawContent,
+        content: rawGeneration,
         keywords: [],
+        wordCount: countWords(rawGeneration),
+        competitorUrlsAnalyzed: competitorUrls.length,
       };
     }
 
-    // === AI SELF-REVIEW PASS ===
-    // A second, fast AI call reviews and corrects the generated blog post
-    const reviewPrompt = `You are a strict QA editor for SEO blog posts. Review and correct the following blog post about "${topic}".
+    // ── PHASE 3: Word Count Enforcement ──────────────────────────────────────
+    const actualWordCount = countWords(post.content || "");
+    console.log(`[generate-blog] Generated word count: ${actualWordCount}`);
 
-CHECK AND FIX:
-1. Title must be compelling, SEO-optimized, and accurately reflect the content (50-70 chars ideal)
-2. Excerpt must be a concise 1-2 sentence summary that hooks the reader
-3. Content must be well-structured markdown with proper headings (H2, H3), lists, and bold text
-4. Content must be at least 500 words and factually coherent
-5. Keywords must be naturally integrated throughout (not stuffed)
-6. No placeholder text, incomplete sentences, or abrupt endings
-7. Logical flow: introduction → body sections → conclusion
-8. Each section should provide genuine value, not filler
-${keywords ? `9. Target keywords "${keywords}" should appear naturally in title, headings, and body` : ""}
-${tone ? `10. Tone should consistently be "${tone}" throughout` : ""}
+    if (actualWordCount < 1500) {
+      console.log("[generate-blog] Content too short — running expansion pass...");
+      const expansionPrompt = `The following blog post is only ${actualWordCount} words, which is below the 1,500-word minimum for competitive SEO.
 
-Return ONLY valid JSON with these fields: title, excerpt, content, keywords (array).
-If everything is good, return unchanged. If issues found, fix them.
-No markdown fences or explanation outside the JSON.`;
+EXPAND this post to at least 2,000 words by:
+1. Adding more depth to each existing section (more examples, data, explanation)
+2. Adding 2–3 additional H2 sections that complement the existing ones
+3. Expanding the FAQ section with 2 more questions if it exists
+4. Adding a proper introduction paragraph if it's too thin
+5. Adding a conclusion with actionable next steps
 
-    try {
-      const reviewResponse = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          temperature: 0.3,
-          messages: [
-            { role: "system", content: reviewPrompt },
-            { role: "user", content: JSON.stringify(parsed) },
-          ],
-        }),
-      });
+Current post:
+${JSON.stringify(post)}
 
-      if (reviewResponse.ok) {
-        const reviewData = await reviewResponse.json();
-        const reviewRaw = reviewData.choices?.[0]?.message?.content || "";
-        const reviewCleaned = reviewRaw.replace(/```json\s*/gi, "").replace(/```\s*/gi, "").trim();
-        try {
-          const reviewed = JSON.parse(reviewCleaned);
-          if (reviewed.title && reviewed.content) {
-            parsed = reviewed;
-            console.log("Blog post verified and corrected by review pass");
-          }
-        } catch {
-          console.warn("Review pass returned invalid JSON, using original");
-        }
-      } else {
-        console.warn("Review pass failed with status:", reviewResponse.status, "- using original post");
+Return ONLY valid JSON in the exact same format: { title, excerpt, content, keywords, wordCount, competitorUrlsAnalyzed }
+The content must be at least 2,000 words.`;
+
+      const expandedRaw = await callOpenAI(
+        OPENAI_API_KEY,
+        [
+          { role: "system", content: "You are an expert SEO content editor who expands and enriches blog posts while maintaining quality and flow. Return ONLY valid JSON." },
+          { role: "user",   content: expansionPrompt },
+        ],
+        0.6
+      );
+
+      const expandedPost = parseJSON<BlogPost & { wordCount?: number }>(expandedRaw);
+      if (expandedPost?.content && countWords(expandedPost.content) > actualWordCount) {
+        post = { ...post, ...expandedPost };
+        console.log(`[generate-blog] Expanded to ${countWords(post.content)} words`);
       }
-    } catch (reviewErr) {
-      console.warn("Review pass error, using original post:", reviewErr);
     }
 
-    return new Response(JSON.stringify(parsed), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    // ── PHASE 4: QA Review Pass ───────────────────────────────────────────────
+    const reviewSystemPrompt = `You are a strict SEO QA editor. Review and fix the blog post if needed. Return ONLY valid JSON.`;
+    const reviewUserPrompt = `Review this blog post for the topic "${topic}" and keywords "${keywords}".
+
+FIX ANY OF THESE ISSUES (if present):
+1. Title must be 50–70 chars and SEO-optimized — fix if not
+2. Excerpt must be 120–160 chars — fix if not
+3. Content must have a proper introduction (2+ sentences), body (H2/H3 sections), and conclusion
+4. Target keywords ("${keywords}") must appear naturally in title, at least 2 headings, and throughout body
+5. Tone must be consistently "${tone}"
+6. No incomplete sentences, no placeholder text like [INSERT X HERE]
+7. FAQ section must exist (3+ questions)
+8. Verify "wordCount" field reflects actual content word count
+
+Current post:
+${JSON.stringify(post)}
+
+Return ONLY valid JSON: { title, excerpt, content, keywords, wordCount, competitorUrlsAnalyzed }
+If everything is correct, return unchanged.`;
+
+    try {
+      const reviewedRaw = await callOpenAI(
+        OPENAI_API_KEY,
+        [
+          { role: "system", content: reviewSystemPrompt },
+          { role: "user",   content: reviewUserPrompt },
+        ],
+        0.3
+      );
+      const reviewedPost = parseJSON<BlogPost & { wordCount?: number; competitorUrlsAnalyzed?: number }>(reviewedRaw);
+      if (reviewedPost?.title && reviewedPost?.content) {
+        post = reviewedPost;
+        console.log("[generate-blog] QA review pass complete");
+      }
+    } catch (reviewErr) {
+      console.warn("[generate-blog] QA review pass failed, using generation output:", reviewErr);
+    }
+
+    // ── Final metadata ─────────────────────────────────────────────────────────
+    post.wordCount = countWords(post.content || "");
+    post.competitorUrlsAnalyzed = competitorUrls.length;
+
+    console.log(
+      `[generate-blog] Final: "${post.title}" | ${post.wordCount} words | ${post.competitorUrlsAnalyzed} competitors analyzed`
+    );
+
+    return jsonResponse(post);
   } catch (e) {
-    console.error("generate-blog error:", e);
-    return new Response(JSON.stringify({ error: "Failed to generate blog post" }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    const msg = e instanceof Error ? e.message : "unknown_error";
+    console.error("[generate-blog] Fatal error:", msg);
+
+    if (msg === "RATE_LIMIT") {
+      return jsonResponse({ error: "Rate limit exceeded. Please try again in a moment." }, 429);
+    }
+    if (msg === "CREDITS_EXHAUSTED") {
+      return jsonResponse({ error: "AI credits exhausted. Please add funds to your workspace." }, 402);
+    }
+    return jsonResponse({ error: "Failed to generate blog post" }, 500);
   }
 });

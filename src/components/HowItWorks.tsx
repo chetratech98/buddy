@@ -1,27 +1,32 @@
 import { motion, useInView } from "framer-motion";
 import { useRef } from "react";
-import { Link2, ScanSearch, FileCheck, Leaf } from "lucide-react";
+import { Link2, ScanSearch, FileCheck, Leaf, BarChart2 } from "lucide-react";
 
 const steps = [
   {
     icon: Link2,
-    title: "Enter Your Website URL",
-    description: "Simply provide your website URL and we'll analyze your niche and identify the best keywords to target.",
+    title: "Connect Your Website",
+    description: "Enter your URL and goals. Buddy analyzes your niche, competitors, and top-performing keywords in under 60 seconds.",
   },
   {
     icon: ScanSearch,
     title: "AI Analyzes Top Results",
-    description: "Our AI scans and analyzes the top 10 Google results for each keyword to understand what works.",
+    description: "Our AI scans the top 10 Google results per keyword — understanding content gaps, structure, and what makes each post rank.",
   },
   {
     icon: FileCheck,
     title: "Content Generated Daily",
-    description: "Every day, fresh SEO-optimized blog posts are created with proper references and citations.",
+    description: "Every morning, fresh SEO-optimized blog posts land in your dashboard — complete with headings, citations, and meta tags.",
   },
   {
     icon: Leaf,
-    title: "Publish & Rank",
-    description: "Review, edit if needed, and publish. Watch your organic traffic grow over time.",
+    title: "Review & Publish",
+    description: "Approve with one click or fine-tune the copy. Publish directly to WordPress, Medium, or schedule for later.",
+  },
+  {
+    icon: BarChart2,
+    title: "Track & Improve",
+    description: "Monitor rankings, traffic, and post performance from a unified analytics dashboard. Refine your strategy as you grow.",
   },
 ];
 
@@ -46,9 +51,9 @@ const HowItWorks = () => {
 
         {/* Steps with connecting line */}
         <div className="relative">
-          <div className="hidden md:block absolute top-16 left-[12%] right-[12%] h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent" />
+          <div className="hidden md:block absolute top-16 left-[8%] right-[8%] h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent" />
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-10 md:gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-10 md:gap-4">
             {steps.map((step, i) => (
               <motion.div
                 key={step.title}

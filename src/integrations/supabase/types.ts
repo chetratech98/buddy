@@ -126,12 +126,17 @@ export type Database = {
           display_name: string | null
           id: string
           keywords: string[] | null
+          medium_author_id: string | null
+          medium_integration_token: string | null
           niche: string | null
           org_goals: string | null
           org_vision: string | null
           updated_at: string
           user_id: string
           website_url: string | null
+          wp_app_password: string | null
+          wp_url: string | null
+          wp_username: string | null
         }
         Insert: {
           avatar_url?: string | null
@@ -139,12 +144,17 @@ export type Database = {
           display_name?: string | null
           id?: string
           keywords?: string[] | null
+          medium_author_id?: string | null
+          medium_integration_token?: string | null
           niche?: string | null
           org_goals?: string | null
           org_vision?: string | null
           updated_at?: string
           user_id: string
           website_url?: string | null
+          wp_app_password?: string | null
+          wp_url?: string | null
+          wp_username?: string | null
         }
         Update: {
           avatar_url?: string | null
@@ -152,12 +162,17 @@ export type Database = {
           display_name?: string | null
           id?: string
           keywords?: string[] | null
+          medium_author_id?: string | null
+          medium_integration_token?: string | null
           niche?: string | null
           org_goals?: string | null
           org_vision?: string | null
           updated_at?: string
           user_id?: string
           website_url?: string | null
+          wp_app_password?: string | null
+          wp_url?: string | null
+          wp_username?: string | null
         }
         Relationships: []
       }

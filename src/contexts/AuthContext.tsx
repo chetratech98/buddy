@@ -44,27 +44,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
+    // onAuthStateChange fires INITIAL_SESSION immediately with the current
+    // session, so a separate getSession() call is redundant and causes a
+    // race where loading flips false twice and fetchProfile runs twice.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
-      
+
       if (session?.user) {
         fetchProfile(session.user.id);
       } else {
         setProfile(null);
       }
-      
-      setLoading(false);
-    });
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      
-      if (session?.user) {
-        fetchProfile(session.user.id);
-      }
-      
       setLoading(false);
     });
 
