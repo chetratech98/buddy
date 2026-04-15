@@ -2,9 +2,29 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { lovable } from "@/integrations/lovable/index";
-import { Sparkles, Eye, EyeOff, Mail, Lock, User } from "lucide-react";
+import { Sparkles, Eye, EyeOff, Mail, Lock, User, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
+
+// Map raw Supabase error messages to user-friendly explanations
+function friendlyAuthError(msg: string): string {
+  const m = msg.toLowerCase();
+  if (m.includes("invalid login credentials") || m.includes("invalid_credentials"))
+    return "Incorrect email or password. Please check your credentials and try again.";
+  if (m.includes("email not confirmed"))
+    return "Your email isn't confirmed yet. Check your inbox for a confirmation link.";
+  if (m.includes("signups not allowed") || m.includes("signup_disabled"))
+    return "New sign-ups are currently disabled. Please contact support.";
+  if (m.includes("user already registered"))
+    return "An account with this email already exists. Try signing in instead.";
+  if (m.includes("password should be at least"))
+    return "Password must be at least 6 characters long.";
+  if (m.includes("unable to validate email address"))
+    return "Please enter a valid email address.";
+  if (m.includes("supabaseurl is required") || m.includes("supabasekey is required"))
+    return "App configuration error: Supabase credentials are missing. Check your .env file.";
+  return msg;
+}
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -13,6 +33,7 @@ const Auth = () => {
   const [displayName, setDisplayName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [inlineError, setInlineError] = useState<string | null>(null);
   const { user, signIn, signUp } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -24,20 +45,35 @@ const Auth = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setInlineError(null);
 
     if (isLogin) {
       const { error } = await signIn(email, password);
       if (error) {
-        toast({ title: "Sign in failed", description: error.message, variant: "destructive" });
+        const msg = friendlyAuthError(error.message);
+        setInlineError(msg);
+        toast({ title: "Sign in failed", description: msg, variant: "destructive" });
       } else {
         navigate("/");
       }
     } else {
+      if (password.length < 6) {
+        const msg = "Password must be at least 6 characters long.";
+        setInlineError(msg);
+        setLoading(false);
+        return;
+      }
       const { error } = await signUp(email, password, displayName);
       if (error) {
-        toast({ title: "Sign up failed", description: error.message, variant: "destructive" });
+        const msg = friendlyAuthError(error.message);
+        setInlineError(msg);
+        toast({ title: "Sign up failed", description: msg, variant: "destructive" });
       } else {
-        toast({ title: "Check your email", description: "We sent you a confirmation link to verify your account." });
+        setInlineError(null);
+        toast({
+          title: "Account created!",
+          description: "Check your email for a confirmation link, then sign in.",
+        });
       }
     }
     setLoading(false);
@@ -45,21 +81,19 @@ const Auth = () => {
 
   const handleDemoLogin = async () => {
     setLoading(true);
-    // Demo credentials for testing
+    setInlineError(null);
     const demoEmail = "demo@blitznova.ai";
     const demoPassword = "demo123456";
-    
+
     const { error } = await signIn(demoEmail, demoPassword);
     if (error) {
-      toast({ 
-        title: "Demo account not found", 
-        description: "Please create an account or contact support.", 
-        variant: "destructive" 
-      });
+      const msg = "Demo account not set up yet. Run the demo SQL script in your Supabase dashboard, or create a new account above.";
+      setInlineError(msg);
+      toast({ title: "Demo login failed", description: msg, variant: "destructive" });
     } else {
-      toast({ 
-        title: "Welcome to Demo!", 
-        description: "You're signed in with the demo account. Explore all features!" 
+      toast({
+        title: "Welcome to Demo!",
+        description: "You're signed in with the demo account. Explore all features!"
       });
       navigate("/dashboard");
     }
@@ -149,10 +183,19 @@ const Auth = () => {
               </div>
             )}
 
+            {/* Inline error banner */}
+            {inlineError && (
+              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-sm text-destructive">
+                <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                <span>{inlineError}</span>
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={loading}
               className="w-full btn-primary"
+              onClick={() => setInlineError(null)}
             >
               {loading ? "Please wait..." : isLogin ? "Sign In" : "Create Account"}
             </button>
@@ -209,7 +252,7 @@ const Auth = () => {
           <p className="text-center text-sm text-muted-foreground mt-6">
             {isLogin ? "Don't have an account?" : "Already have an account?"}{" "}
             <button
-              onClick={() => setIsLogin(!isLogin)}
+              onClick={() => { setIsLogin(!isLogin); setInlineError(null); }}
               className="text-primary font-medium hover:underline"
             >
               {isLogin ? "Sign up" : "Sign in"}
