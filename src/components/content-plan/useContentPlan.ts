@@ -207,17 +207,15 @@ export function useContentPlan() {
         // Use existing serpInsights if fetch fails
       }
 
-      // If no user, use demo data
+      // Guard: must be logged in to generate real plans
       if (!user) {
         clearInterval(progressInterval);
-        setGenerationProgress(100);
-        setPlan(DEMO_CONTENT_PLAN);
-        toast({ 
-          title: "Demo content plan loaded!", 
-          description: `${DEMO_CONTENT_PLAN.length} posts planned. Sign in to generate custom plans.` 
-        });
-        setTimeout(() => setGenerationProgress(0), 1000);
         setGenerating(false);
+        toast({
+          title: "Sign in required",
+          description: "Please sign in to generate a real content plan.",
+          variant: "destructive",
+        });
         return;
       }
 
@@ -234,31 +232,34 @@ export function useContentPlan() {
           orgVision: orgVision || undefined,
         },
       });
-      if (error) throw error;
+
+      // Surface the exact error so user can see what failed
+      if (error) throw new Error(error.message || JSON.stringify(error));
       if (data?.error) throw new Error(data.error);
 
       clearInterval(progressInterval);
       setGenerationProgress(100);
 
-      const newPlan = data.plan || [];
+      const newPlan: ContentItem[] = data.plan || [];
+      if (newPlan.length === 0) throw new Error("AI returned an empty plan. Please try again.");
+
       setPlan(newPlan);
       const id = await savePlanData(newPlan, savedPlanId);
       setSavedPlanId(id);
-      toast({ title: "Content plan generated & saved!", description: `${newPlan.length} posts planned.` });
+      toast({
+        title: `✅ Real content plan ready!`,
+        description: `${newPlan.length} posts planned from live Google data (${data.meta?.dataSource ?? "AI"}).`,
+      });
     } catch (e: any) {
       clearInterval(progressInterval);
-      console.error("Content plan generation error:", e);
-      if (user) {
-        // Logged in — show real error, don't silently use demo
-        toast({
-          title: "Generation failed",
-          description: e?.message || "Failed to generate content plan. Please try again.",
-          variant: "destructive",
-        });
-      } else {
-        setPlan(DEMO_CONTENT_PLAN);
-        toast({ title: "Demo content plan loaded", description: "Sign in to generate real plans.", variant: "destructive" });
-      }
+      const msg = e?.message || "Failed to generate content plan. Please try again.";
+      console.error("[content-plan] generation error:", msg);
+      // Always show the real error — never silently fall back to demo
+      toast({
+        title: "Generation failed",
+        description: msg,
+        variant: "destructive",
+      });
     } finally {
       setGenerating(false);
       setTimeout(() => setGenerationProgress(0), 1000);
@@ -301,11 +302,18 @@ export function useContentPlan() {
     setPlan(DEMO_CONTENT_PLAN);
     setNiche("Content Marketing");
     setKeywords(["content marketing strategy", "SEO best practices", "email marketing"]);
-    toast({ 
-      title: "Demo data loaded!", 
-      description: `${DEMO_CONTENT_PLAN.length} sample posts loaded. Try editing or exporting!` 
+    toast({
+      title: "Sample data loaded (not real)",
+      description: "This is example data only. Click 'Generate Plan' for real AI + SerpAPI content.",
     });
   }, [toast]);
+
+  // Detect if current plan is unmodified demo data (same titles as DEMO_CONTENT_PLAN)
+  const isDemoPlan = plan.length > 0 &&
+    DEMO_CONTENT_PLAN.length > 0 &&
+    plan.some((item) =>
+      DEMO_CONTENT_PLAN.some((demo) => demo.title === item.title)
+    );
 
   return {
     user,
@@ -320,6 +328,7 @@ export function useContentPlan() {
     tone,
     setTone,
     plan,
+    isDemoPlan,
     generating,
     generationProgress,
     saving,

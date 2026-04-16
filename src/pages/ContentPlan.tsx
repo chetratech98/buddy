@@ -9,6 +9,7 @@ import {
   Download,
   FileText,
   FileSpreadsheet,
+  AlertTriangle,
 } from "lucide-react";
 import { exportPlanAsCSV, exportPlanAsPDF } from "@/lib/content-plan-export";
 import {
@@ -41,6 +42,7 @@ const ContentPlan = () => {
     tone,
     setTone,
     plan,
+    isDemoPlan,
     generating,
     generationProgress,
     saving,
@@ -188,6 +190,26 @@ const ContentPlan = () => {
                 </button>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Demo data warning banner */}
+        {isDemoPlan && !generating && (
+          <div className="mb-4 flex items-start gap-3 p-4 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-yellow-700 dark:text-yellow-400">
+            <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-semibold text-sm">You are viewing sample demo data — not real results</p>
+              <p className="text-xs mt-0.5 opacity-80">
+                Click <strong>"Generate Plan"</strong> above to create a real 30-day content plan using live Google search data and your niche.
+              </p>
+            </div>
+            <button
+              onClick={generate}
+              disabled={generating}
+              className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-lg bg-yellow-500/20 hover:bg-yellow-500/30 transition-colors"
+            >
+              Generate Now →
+            </button>
           </div>
         )}
 
