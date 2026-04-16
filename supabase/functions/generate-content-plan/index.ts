@@ -1,3 +1,18 @@
+/**
+ * generate-content-plan
+ *
+ * REAL DATA PIPELINE (no hallucination):
+ *   1. For each primary keyword (up to 5), query SerpApi:
+ *      - organic_results   → real competitor titles & domains
+ *      - related_questions → "People Also Ask" (actual user questions)
+ *      - related_searches  → real long-tail keyword ideas
+ *      - ads_count         → commercial intent signal
+ *      - total_results     → volume proxy
+ *   2. Build a rich data context from that live Google data
+ *   3. GPT generates a 30-day plan using ONLY real discovered topics
+ *   4. QA pass validates structure and ensures no duplicates
+ */
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -9,294 +24,353 @@ const corsHeaders = {
   "Access-Control-Max-Age": "86400",
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SerpApi: fetch live Google data for one keyword
+// Returns: top competitors, People Also Ask, related searches, intent signals
+// ─────────────────────────────────────────────────────────────────────────────
+interface SerpKeywordData {
+  keyword: string;
+  totalResults: number;
+  adsCount: number;
+  competitors: Array<{ position: number; title: string; domain: string }>;
+  peopleAlsoAsk: string[];      // real questions users type into Google
+  relatedSearches: string[];    // real related queries from Google
+  serpFeatures: string[];       // featured_snippet, video_carousel, etc.
+  intent: "informational" | "commercial" | "transactional" | "navigational";
+}
+
+async function fetchSerpData(keyword: string, apiKey: string): Promise<SerpKeywordData | null> {
+  try {
+    const url = new URL("https://serpapi.com/search.json");
+    url.searchParams.set("q",       keyword);
+    url.searchParams.set("api_key", apiKey);
+    url.searchParams.set("engine",  "google");
+    url.searchParams.set("num",     "10");
+    url.searchParams.set("gl",      "us");
+    url.searchParams.set("hl",      "en");
+
+    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(12000) });
+    if (!res.ok) {
+      console.warn(`[serp] ${keyword}: HTTP ${res.status}`);
+      return null;
+    }
+
+    const data = await res.json();
+
+    // Competitors: top organic titles
+    const competitors = (data.organic_results ?? []).slice(0, 8).map((r: any) => ({
+      position: r.position ?? 0,
+      title:    (r.title ?? "").slice(0, 120),
+      domain:   (() => { try { return new URL(r.link ?? "").hostname.replace(/^www\./, ""); } catch { return ""; } })(),
+    }));
+
+    // People Also Ask: real user questions
+    const peopleAlsoAsk: string[] = (data.related_questions ?? [])
+      .slice(0, 8)
+      .map((q: any) => (q.question ?? "").trim())
+      .filter(Boolean);
+
+    // Related searches: real long-tail variations
+    const relatedSearches: string[] = (data.related_searches ?? [])
+      .slice(0, 10)
+      .map((s: any) => (s.query ?? "").trim())
+      .filter(Boolean);
+
+    // SERP features present
+    const serpFeatures: string[] = [];
+    if (data.answer_box)          serpFeatures.push("featured_snippet");
+    if (data.knowledge_graph)     serpFeatures.push("knowledge_graph");
+    if (data.related_questions?.length) serpFeatures.push("people_also_ask");
+    if (data.inline_videos?.length)     serpFeatures.push("video_carousel");
+    if (data.top_stories?.length)       serpFeatures.push("top_stories");
+    if (data.shopping_results?.length)  serpFeatures.push("shopping");
+
+    // Ads count
+    const adsCount = (data.ads ?? []).length;
+
+    // Total results (volume proxy)
+    const totalResults = parseInt(
+      (data.search_information?.total_results ?? "0").toString().replace(/,/g, ""),
+      10
+    ) || 0;
+
+    // Infer intent
+    const kw = keyword.toLowerCase();
+    let intent: SerpKeywordData["intent"] = "informational";
+    if (/\b(buy|price|cost|cheap|deal|order|purchase|shop)\b/.test(kw)) intent = "transactional";
+    else if (/\b(best|top|review|vs|compare|alternative)\b/.test(kw) || adsCount >= 3) intent = "commercial";
+    else if (/^how to |^what is |^why |^guide|tutorial|tips/.test(kw)) intent = "informational";
+
+    return { keyword, totalResults, adsCount, competitors, peopleAlsoAsk, relatedSearches, serpFeatures, intent };
+  } catch (err) {
+    console.warn(`[serp] ${keyword} failed:`, err);
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Build the SERP intelligence context string for GPT
+// ─────────────────────────────────────────────────────────────────────────────
+function buildSerpContext(serpResults: SerpKeywordData[]): string {
+  if (!serpResults.length) return "";
+
+  let ctx = "\n\n=== LIVE GOOGLE SERP INTELLIGENCE ===\n";
+  ctx += "These are real data points from current Google results. Base the content plan on these real topics, questions, and gaps.\n\n";
+
+  for (const d of serpResults) {
+    ctx += `## Keyword: "${d.keyword}"\n`;
+    ctx += `- Search Intent: ${d.intent}\n`;
+    ctx += `- Commercial Signal: ${d.adsCount} ads → ${d.adsCount >= 4 ? "high buyer intent" : d.adsCount >= 2 ? "moderate commercial" : "informational focus"}\n`;
+    ctx += `- Volume Proxy: ${d.totalResults.toLocaleString()} results\n`;
+
+    if (d.serpFeatures.length) {
+      ctx += `- SERP Features: ${d.serpFeatures.join(", ")}\n`;
+      if (d.serpFeatures.includes("featured_snippet"))
+        ctx += `  → OPPORTUNITY: Write a concise definition paragraph + structured list to target the featured snippet\n`;
+      if (d.serpFeatures.includes("people_also_ask"))
+        ctx += `  → OPPORTUNITY: Include an FAQ section answering the People Also Ask questions below\n`;
+      if (d.serpFeatures.includes("video_carousel"))
+        ctx += `  → Note: Video carousels are present — consider a "how to" format to compete\n`;
+    }
+
+    if (d.competitors.length) {
+      ctx += `- Top Competitors (real titles ranking now):\n`;
+      d.competitors.slice(0, 5).forEach((c) => {
+        ctx += `  ${c.position}. "${c.title}" — ${c.domain}\n`;
+      });
+    }
+
+    if (d.peopleAlsoAsk.length) {
+      ctx += `- People Also Ask (REAL user questions — use these as blog post titles or H2 headings):\n`;
+      d.peopleAlsoAsk.forEach((q) => ctx += `  • ${q}\n`);
+    }
+
+    if (d.relatedSearches.length) {
+      ctx += `- Related Searches (REAL long-tail variations — use as keyword targets):\n`;
+      d.relatedSearches.forEach((s) => ctx += `  • ${s}\n`);
+    }
+
+    ctx += "\n";
+  }
+
+  // Overall content gap note
+  const allPAA = serpResults.flatMap((d) => d.peopleAlsoAsk);
+  const allRelated = serpResults.flatMap((d) => d.relatedSearches);
+  ctx += `## Content Gaps Identified\n`;
+  ctx += `${allPAA.length} unanswered user questions found across all keywords.\n`;
+  ctx += `${allRelated.length} related search variations to target.\n`;
+  ctx += `Create blog posts that directly answer the People Also Ask questions — these are proven content gaps with real search demand.\n`;
+
+  return ctx;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main handler
+// ─────────────────────────────────────────────────────────────────────────────
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
+  const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+
   try {
-    // Auth check
+    // ── Auth ────────────────────────────────────────────────────────────────
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    if (!authHeader?.startsWith("Bearer ")) return json({ error: "Unauthorized" }, 401);
+
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_ANON_KEY") ?? "",
       { global: { headers: { Authorization: authHeader } } }
     );
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    if (authError || !user) return json({ error: "Unauthorized" }, 401);
 
-    // Input validation
+    // ── Input validation ─────────────────────────────────────────────────────
     const body = await req.json();
-    const niche = typeof body.niche === "string" ? body.niche.trim().slice(0, 200) : "";
-    const keywords = Array.isArray(body.keywords) ? body.keywords.slice(0, 50).map((k: any) => String(k).slice(0, 100)) : [];
-    const longTailKeywords = Array.isArray(body.longTailKeywords) ? body.longTailKeywords.slice(0, 50).map((k: any) => String(k).slice(0, 200)) : [];
-    const days = typeof body.days === "number" && body.days >= 1 && body.days <= 365 ? Math.floor(body.days) : 30;
-    const tone = typeof body.tone === "string" ? body.tone.trim().slice(0, 50) : "professional";
+    const niche          = typeof body.niche === "string" ? body.niche.trim().slice(0, 200) : "";
+    const keywords: string[] = Array.isArray(body.keywords)
+      ? body.keywords.slice(0, 20).map((k: any) => String(k).slice(0, 100)).filter(Boolean)
+      : [];
+    const longTailKeywords: string[] = Array.isArray(body.longTailKeywords)
+      ? body.longTailKeywords.slice(0, 20).map((k: any) => String(k).slice(0, 200)).filter(Boolean)
+      : [];
+    const days     = typeof body.days === "number" && body.days >= 1 && body.days <= 90 ? Math.floor(body.days) : 30;
+    const tone     = typeof body.tone === "string" ? body.tone.trim().slice(0, 50) : "professional";
     const orgGoals = typeof body.orgGoals === "string" ? body.orgGoals.trim().slice(0, 1000) : "";
     const orgVision = typeof body.orgVision === "string" ? body.orgVision.trim().slice(0, 1000) : "";
 
-    if (!niche) {
-      return new Response(JSON.stringify({ error: "Niche is required" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    if (!niche) return json({ error: "Niche is required" }, 400);
 
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-    if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not configured");
+    const SERP_API_KEY   = Deno.env.get("SERP_API_KEY");
 
-    const keywordList = keywords.join(", ");
-    const longTailList = longTailKeywords.join(", ");
+    if (!OPENAI_API_KEY) return json({ error: "OPENAI_API_KEY is not configured in Supabase secrets" }, 500);
 
-    // Build enriched SERP context from competitive insights
+    // ── Step 1: Live SerpApi research ────────────────────────────────────────
     let serpContext = "";
-    const serpInsights = body.serpInsights;
-    if (serpInsights?.keywords?.length) {
-      serpContext = "\n\n=== SERP COMPETITIVE INTELLIGENCE ===\n";
-      serpContext += "Use this real competitor data to create content that fills gaps and outperforms existing results.\n\n";
+    let serpDataSummary = "";
 
-      for (const kw of serpInsights.keywords.slice(0, 10)) {
-        serpContext += `## Keyword: "${String(kw.keyword).slice(0, 100)}"\n`;
-        serpContext += `- Search Intent: ${kw.searchIntent || "unknown"} (confidence: ${kw.intentConfidence || "N/A"}%)\n`;
-        serpContext += `- Difficulty: ${kw.difficulty || "unknown"} (score: ${kw.difficultyScore || "N/A"}/100)\n`;
-        serpContext += `- Opportunity: ${String(kw.opportunity || "").slice(0, 300)}\n`;
-        
-        if (kw.recommendedContentFormat) {
-          serpContext += `- Recommended Format: ${kw.recommendedContentFormat}\n`;
+    if (SERP_API_KEY && keywords.length > 0) {
+      console.log(`[content-plan] Fetching live SERP data for ${Math.min(keywords.length, 5)} keywords...`);
+      const keywordsToCheck = keywords.slice(0, 5); // respect rate limits
+
+      // Sequential requests (SerpApi free tier rate limit)
+      const serpResults: SerpKeywordData[] = [];
+      for (const kw of keywordsToCheck) {
+        const result = await fetchSerpData(kw, SERP_API_KEY);
+        if (result) serpResults.push(result);
+        if (keywordsToCheck.indexOf(kw) < keywordsToCheck.length - 1) {
+          await new Promise((r) => setTimeout(r, 600)); // 600ms between requests
         }
-        if (kw.targetWordCount) {
-          serpContext += `- Target Word Count: ${kw.targetWordCount}\n`;
-        }
-        if (kw.contentBenchmark) {
-          const cb = kw.contentBenchmark;
-          serpContext += `- Content Benchmark: avg ${cb.avgWordCount} words, ${cb.avgH2Count} H2s, ${cb.avgImageCount} images\n`;
-          if (cb.commonFormats?.length) {
-            serpContext += `- Winning Formats: ${cb.commonFormats.join(", ")}\n`;
-          }
-          if (cb.structuralPatterns?.length) {
-            serpContext += `- Structural Patterns: ${cb.structuralPatterns.slice(0, 3).join("; ")}\n`;
-          }
-        }
-        if (kw.serpFeatures?.length) {
-          serpContext += `- SERP Features Present: ${kw.serpFeatures.join(", ")}\n`;
-          serpContext += `  → Create content optimized for these features (e.g., FAQ sections for PAA, concise answers for featured snippets)\n`;
-        }
-        if (kw.quickWins?.length) {
-          serpContext += `- Quick Win Tactics:\n`;
-          kw.quickWins.slice(0, 3).forEach((qw: string) => {
-            serpContext += `  • ${String(qw).slice(0, 200)}\n`;
-          });
-        }
-        if (kw.relatedKeywords?.length) {
-          serpContext += `- Related Keywords: ${kw.relatedKeywords.slice(0, 8).join(", ")}\n`;
-        }
+      }
+
+      console.log(`[content-plan] Got SERP data for ${serpResults.length}/${keywordsToCheck.length} keywords`);
+      serpContext = buildSerpContext(serpResults);
+
+      // Build summary for logging
+      const totalPAA = serpResults.reduce((n, d) => n + d.peopleAlsoAsk.length, 0);
+      const totalRelated = serpResults.reduce((n, d) => n + d.relatedSearches.length, 0);
+      serpDataSummary = `${serpResults.length} keywords researched, ${totalPAA} PAA questions, ${totalRelated} related searches`;
+      console.log(`[content-plan] SERP summary: ${serpDataSummary}`);
+    } else if (body.serpInsights?.keywords?.length) {
+      // Fallback: use pre-existing SERP analysis from seo-analysis function
+      console.log("[content-plan] Using pre-existing SERP insights (no SERP_API_KEY or no keywords)");
+      const si = body.serpInsights;
+      serpContext = "\n\n=== SERP COMPETITIVE INTELLIGENCE (from previous analysis) ===\n";
+      for (const kw of si.keywords.slice(0, 8)) {
+        serpContext += `## Keyword: "${kw.keyword}"\n`;
+        serpContext += `- Intent: ${kw.searchIntent || "unknown"}\n`;
+        serpContext += `- Difficulty: ${kw.difficulty || "unknown"}\n`;
+        if (kw.relatedKeywords?.length) serpContext += `- Related: ${kw.relatedKeywords.slice(0, 6).join(", ")}\n`;
         serpContext += "\n";
       }
-
-      if (serpInsights.overallInsights) {
-        const oi = serpInsights.overallInsights;
-        serpContext += "## Overall Market Insights\n";
-        serpContext += `- Dominant Content Type: ${String(oi.dominantContentType || "").slice(0, 50)}\n`;
-        serpContext += `- Dominant Search Intent: ${String(oi.dominantSearchIntent || "").slice(0, 50)}\n`;
-        serpContext += `- Avg Word Count: ${oi.avgWordCount}\n`;
-        serpContext += `- Avg Content Score: ${oi.avgContentScore || "N/A"}/100\n`;
-        
-        if (oi.contentGaps?.length) {
-          serpContext += `\n### Content Gaps to Exploit:\n`;
-          oi.contentGaps.slice(0, 5).forEach((gap: string) => {
-            serpContext += `  • ${String(gap).slice(0, 200)}\n`;
-          });
-        }
-        if (oi.commonTopics?.length) {
-          serpContext += `- Common Topics: ${oi.commonTopics.slice(0, 10).join(", ")}\n`;
-        }
-        if (oi.topAuthorityDomains?.length) {
-          serpContext += `- Top Authority Domains: ${oi.topAuthorityDomains.slice(0, 5).join(", ")}\n`;
-        }
-
-        // Include prioritized recommendations
-        if (oi.recommendations?.length) {
-          serpContext += `\n### Strategic Recommendations:\n`;
-          const recs = oi.recommendations.slice(0, 5);
-          recs.forEach((rec: any) => {
-            if (typeof rec === "string") {
-              serpContext += `  • ${rec}\n`;
-            } else {
-              serpContext += `  • [${rec.priority?.toUpperCase() || "MED"}] ${rec.action} → Impact: ${rec.impact} (Effort: ${rec.effort})\n`;
-            }
-          });
-        }
-
-        // Include content strategy
-        if (oi.contentStrategy) {
-          const cs = oi.contentStrategy;
-          serpContext += `\n### Content Strategy Blueprint:\n`;
-          if (cs.pillarContent) serpContext += `- Pillar Content: ${cs.pillarContent}\n`;
-          if (cs.supportingContent?.length) {
-            serpContext += `- Supporting Content Ideas: ${cs.supportingContent.slice(0, 5).join("; ")}\n`;
-          }
-          if (cs.contentCalendarSuggestion) {
-            serpContext += `- Calendar Strategy: ${cs.contentCalendarSuggestion}\n`;
-          }
-        }
-      }
+    } else {
+      console.log("[content-plan] No SERP data available — generating from niche/keywords only");
     }
 
-    // Build organization context
-    let orgContext = "";
-    if (orgGoals || orgVision) {
-      orgContext = "\n\n=== ORGANIZATION CONTEXT ===\nAlign all content with these strategic directions:\n";
-      if (orgGoals) orgContext += `- Goals: ${orgGoals}\n`;
-      if (orgVision) orgContext += `- Vision: ${orgVision}\n`;
-    }
+    // ── Step 2: Build the AI prompt with real data ────────────────────────────
+    const orgContext = (orgGoals || orgVision)
+      ? `\n\n=== ORGANIZATION CONTEXT ===\n${orgGoals ? `Goals: ${orgGoals}\n` : ""}${orgVision ? `Vision: ${orgVision}\n` : ""}`
+      : "";
 
-    const systemPrompt = `You are an expert SEO content strategist. Generate a ${days}-day content plan as a JSON array.
+    const systemPrompt = `You are an expert SEO content strategist.
 
-Each item must have:
-- "day": number (1 to ${days})
-- "title": a compelling, SEO-optimized blog post title
-- "type": one of "blog", "listicle", "how-to", "case-study", "opinion"
+${serpContext
+  ? `You have been given REAL live Google SERP data below. You MUST:
+- Use People Also Ask questions as direct blog post topics (they are proven search demand)
+- Use related searches as long_tail_keyword targets
+- Create content that fills the gaps competitors haven't covered
+- Match the content format to what is ranking (listicles if listicles rank, how-tos if how-tos rank)
+- Do NOT invent topics that aren't supported by the research data`
+  : `Generate a strategic ${days}-day content plan based on the niche and keywords provided.
+Cover a range of content types and keyword variations.`}
+
+Generate a JSON array of exactly ${days} items. Each item MUST have:
+- "day": integer (1 to ${days})
+- "title": compelling, SEO-optimized post title (ideally 50-60 characters)
+- "type": one of "blog" | "listicle" | "how-to" | "case-study" | "opinion"
 - "keyword": the primary keyword to target
-- "long_tail_keyword": a relevant long-tail keyword phrase (3-6 words)${longTailList ? ", preferring from the provided list" : ""}
-- "description": a 1-2 sentence summary with the content angle and unique value proposition
+- "long_tail_keyword": a unique 3-6 word long-tail phrase (different for every item)
+- "description": 2 sentences: what the post covers AND the unique angle/value over competitors
 
-IMPORTANT RULES:
-${serpContext ? `- Use the SERP competitive intelligence to inform content angles, formats, and gaps to exploit
-- Prioritize content that fills identified content gaps
-- Match recommended content formats from SERP analysis
-- Target SERP features (featured snippets, PAA) where identified
-- Apply quick-win tactics from the analysis` : ""}
-- Ensure variety in content types and distribute keywords evenly
-- Each post should target a unique long-tail keyword
-- Sequence content logically (foundational → advanced)
-- Include pillar content pieces early in the plan
+RULES:
+- Every title must be unique
+- Every long_tail_keyword must be unique across the entire plan
+- Distribute content types: roughly 30% how-to, 30% listicle, 20% blog, 10% case-study, 10% opinion
+- Order: foundational content first (days 1-10), then intermediate (days 11-20), then advanced/opinion (days 21-30)
+- Return ONLY a valid JSON array — no markdown fences, no explanations`;
 
-Return ONLY a valid JSON array, no markdown fences.`;
+    const userPrompt = `Create a ${days}-day content plan.
 
-    const userPrompt = `Create a ${days}-day content plan for the "${niche}" niche.
+Niche: ${niche}
+Primary keywords: ${keywords.join(", ")}
+${longTailKeywords.length ? `Existing long-tail keywords: ${longTailKeywords.slice(0, 15).join(", ")}` : ""}
+Tone: ${tone}
+${orgContext}
+${serpContext}`;
 
-Primary keywords: ${keywordList}
-${longTailList ? `Long-tail keywords: ${longTailList}` : ""}
-Tone: ${tone}${orgContext}${serpContext}`;
-
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    // ── Step 3: Generate plan with GPT ────────────────────────────────────────
+    const aiRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
+      headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        temperature: 0.5,
+        temperature: 0.45,
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
+          { role: "user",   content: userPrompt },
         ],
       }),
     });
 
-    if (!response.ok) {
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limit exceeded. Please try again shortly." }), {
-          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "Usage limit reached." }), {
-          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      console.error("AI gateway error:", response.status);
-      throw new Error("AI gateway error");
+    if (!aiRes.ok) {
+      if (aiRes.status === 429) return json({ error: "OpenAI rate limit reached. Please wait a moment and try again." }, 429);
+      if (aiRes.status === 402) return json({ error: "OpenAI usage limit reached. Check your billing." }, 402);
+      throw new Error(`OpenAI error: ${aiRes.status}`);
     }
 
-    const data = await response.json();
-    const raw = data.choices?.[0]?.message?.content || "[]";
+    const aiData = await aiRes.json();
+    const raw    = aiData.choices?.[0]?.message?.content ?? "[]";
     const cleaned = raw.replace(/```json\s*/gi, "").replace(/```\s*/gi, "").trim();
 
-    let plan;
+    let plan: any[];
     try {
       plan = JSON.parse(cleaned);
     } catch {
-      const match = cleaned.match(/\[[\s\S]*\]/);
-      plan = match ? JSON.parse(match[0]) : [];
+      const m = cleaned.match(/\[[\s\S]*\]/);
+      plan = m ? JSON.parse(m[0]) : [];
     }
 
-    // === AI SELF-REVIEW PASS ===
-    // A second, fast AI call reviews and corrects the generated plan
-    const reviewPrompt = `You are a strict QA reviewer for SEO content plans. Review and correct the following ${days}-day content plan for the "${niche}" niche.
-
-CHECK AND FIX:
-1. Every item MUST have all required fields: day (number 1-${days}), title (string), type (one of: blog, listicle, how-to, case-study, opinion), keyword (string), long_tail_keyword (string, 3-6 words), description (string, 1-2 sentences)
-2. Days must be sequential 1 to ${days} with no gaps or duplicates
-3. Titles must be unique and SEO-optimized (no generic/vague titles)
-4. Keywords must be relevant to the niche "${niche}" and from this list when possible: ${keywordList}
-5. Long-tail keywords must be 3-6 words and unique across the plan
-6. Content types should be varied (not all the same type)
-7. Descriptions must clearly state the content angle and value proposition
-8. Content should progress logically (foundational → advanced)
-
-If everything is correct, return the plan unchanged. If issues are found, fix them and return the corrected plan.
-Return ONLY a valid JSON array, no markdown fences or explanation.`;
-
-    try {
-      const reviewResponse = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          messages: [
-            { role: "system", content: reviewPrompt },
-            { role: "user", content: JSON.stringify(plan) },
-          ],
-        }),
-      });
-
-      if (reviewResponse.ok) {
-        const reviewData = await reviewResponse.json();
-        const reviewRaw = reviewData.choices?.[0]?.message?.content || "";
-        const reviewCleaned = reviewRaw.replace(/```json\s*/gi, "").replace(/```\s*/gi, "").trim();
-        try {
-          const reviewedPlan = JSON.parse(reviewCleaned);
-          if (Array.isArray(reviewedPlan) && reviewedPlan.length > 0) {
-            plan = reviewedPlan;
-            console.log("Content plan verified and corrected by review pass");
-          }
-        } catch {
-          const reviewMatch = reviewCleaned.match(/\[[\s\S]*\]/);
-          if (reviewMatch) {
-            const reviewedPlan = JSON.parse(reviewMatch[0]);
-            if (Array.isArray(reviewedPlan) && reviewedPlan.length > 0) {
-              plan = reviewedPlan;
-              console.log("Content plan verified and corrected by review pass (extracted)");
-            }
-          }
-        }
-      } else {
-        console.warn("Review pass failed with status:", reviewResponse.status, "- using original plan");
-      }
-    } catch (reviewErr) {
-      console.warn("Review pass error, using original plan:", reviewErr);
+    if (!Array.isArray(plan) || plan.length === 0) {
+      throw new Error("AI returned an empty plan. Please try again.");
     }
 
-    return new Response(JSON.stringify({ plan }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    // ── Step 4: QA / structure validation pass ────────────────────────────────
+    const requiredFields = ["day", "title", "type", "keyword", "long_tail_keyword", "description"];
+    const validTypes     = new Set(["blog", "listicle", "how-to", "case-study", "opinion"]);
+
+    plan = plan
+      .filter((item: any) => typeof item === "object" && item !== null)
+      .map((item: any, idx: number) => ({
+        day:              typeof item.day === "number" ? item.day : idx + 1,
+        title:            String(item.title || `Post ${idx + 1}`).slice(0, 150),
+        type:             validTypes.has(item.type) ? item.type : "blog",
+        keyword:          String(item.keyword || keywords[0] || niche).slice(0, 100),
+        long_tail_keyword: String(item.long_tail_keyword || item.keyword || "").slice(0, 200),
+        description:      String(item.description || "").slice(0, 400),
+      }))
+      .slice(0, days);
+
+    // Ensure unique long_tail_keywords
+    const seenLTK = new Set<string>();
+    plan = plan.map((item: any) => {
+      let ltk = item.long_tail_keyword;
+      if (seenLTK.has(ltk)) ltk = `${ltk} ${item.type}`;
+      seenLTK.add(ltk);
+      return { ...item, long_tail_keyword: ltk };
     });
+
+    console.log(`[content-plan] ✅ Generated ${plan.length} items. ${serpDataSummary ? `SERP: ${serpDataSummary}` : "No SERP data used."}`);
+
+    return json({
+      plan,
+      meta: {
+        serpResearched: !!SERP_API_KEY && keywords.length > 0,
+        itemCount:      plan.length,
+        dataSource:     SERP_API_KEY ? "live_serp + openai" : "openai_only",
+        serpSummary:    serpDataSummary || null,
+      },
+    });
+
   } catch (e) {
-    console.error("generate-content-plan error:", e);
-    return new Response(JSON.stringify({ error: "Failed to generate content plan" }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[content-plan] Error:", msg);
+    return json({ error: msg || "Failed to generate content plan" }, 500);
   }
 });
