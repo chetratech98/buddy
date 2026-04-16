@@ -2,23 +2,16 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { lovable } from "@/integrations/lovable/index";
-import { Sparkles, Eye, EyeOff, Mail, Lock, User, AlertCircle } from "lucide-react";
+import { Sparkles, Eye, EyeOff, Mail, Lock, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
 
-// Map raw Supabase error messages to user-friendly explanations
 function friendlyAuthError(msg: string): string {
   const m = msg.toLowerCase();
   if (m.includes("invalid login credentials") || m.includes("invalid_credentials"))
     return "Incorrect email or password. Please check your credentials and try again.";
   if (m.includes("email not confirmed"))
     return "Your email isn't confirmed yet. Check your inbox for a confirmation link.";
-  if (m.includes("signups not allowed") || m.includes("signup_disabled"))
-    return "New sign-ups are currently disabled. Please contact support.";
-  if (m.includes("user already registered"))
-    return "An account with this email already exists. Try signing in instead.";
-  if (m.includes("password should be at least"))
-    return "Password must be at least 6 characters long.";
   if (m.includes("unable to validate email address"))
     return "Please enter a valid email address.";
   if (m.includes("supabaseurl is required") || m.includes("supabasekey is required"))
@@ -27,14 +20,12 @@ function friendlyAuthError(msg: string): string {
 }
 
 const Auth = () => {
-  const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [displayName, setDisplayName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [inlineError, setInlineError] = useState<string | null>(null);
-  const { user, signIn, signUp } = useAuth();
+  const { user, signIn } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -47,62 +38,19 @@ const Auth = () => {
     setLoading(true);
     setInlineError(null);
 
-    if (isLogin) {
-      const { error } = await signIn(email, password);
-      if (error) {
-        const msg = friendlyAuthError(error.message);
-        setInlineError(msg);
-        toast({ title: "Sign in failed", description: msg, variant: "destructive" });
-      } else {
-        navigate("/");
-      }
-    } else {
-      if (password.length < 6) {
-        const msg = "Password must be at least 6 characters long.";
-        setInlineError(msg);
-        setLoading(false);
-        return;
-      }
-      const { error } = await signUp(email, password, displayName);
-      if (error) {
-        const msg = friendlyAuthError(error.message);
-        setInlineError(msg);
-        toast({ title: "Sign up failed", description: msg, variant: "destructive" });
-      } else {
-        setInlineError(null);
-        toast({
-          title: "Account created!",
-          description: "Check your email for a confirmation link, then sign in.",
-        });
-      }
-    }
-    setLoading(false);
-  };
-
-  const handleDemoLogin = async () => {
-    setLoading(true);
-    setInlineError(null);
-    const demoEmail = "demo@blitznova.ai";
-    const demoPassword = "demo123456";
-
-    const { error } = await signIn(demoEmail, demoPassword);
+    const { error } = await signIn(email, password);
     if (error) {
-      const msg = "Demo account not set up yet. Run the demo SQL script in your Supabase dashboard, or create a new account above.";
+      const msg = friendlyAuthError(error.message);
       setInlineError(msg);
-      toast({ title: "Demo login failed", description: msg, variant: "destructive" });
+      toast({ title: "Sign in failed", description: msg, variant: "destructive" });
     } else {
-      toast({
-        title: "Welcome to Demo!",
-        description: "You're signed in with the demo account. Explore all features!"
-      });
-      navigate("/dashboard");
+      navigate("/");
     }
     setLoading(false);
   };
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-4 relative overflow-hidden">
-      {/* Background decoration */}
       <div className="absolute top-1/4 left-1/4 w-[400px] h-[400px] bg-primary/5 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-1/4 right-1/4 w-[300px] h-[300px] bg-accent/10 rounded-full blur-[100px] pointer-events-none" />
 
@@ -122,27 +70,12 @@ const Auth = () => {
 
         {/* Card */}
         <div className="card-elevated p-8">
-          <h2 className="text-2xl font-bold text-center mb-2">
-            {isLogin ? "Welcome back" : "Create your account"}
-          </h2>
+          <h2 className="text-2xl font-bold text-center mb-2">Welcome back</h2>
           <p className="text-sm text-muted-foreground text-center mb-6">
-            {isLogin ? "Sign in to continue to your dashboard" : "Get started with your free account"}
+            Sign in to continue to your dashboard
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {!isLogin && (
-              <div className="relative">
-                <User size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  type="text"
-                  placeholder="Display name"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  className="input-base pl-11"
-                />
-              </div>
-            )}
-
             <div className="relative">
               <Mail size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <input
@@ -175,15 +108,12 @@ const Auth = () => {
               </button>
             </div>
 
-            {isLogin && (
-              <div className="text-right">
-                <a href="/forgot-password" className="text-sm text-primary hover:underline">
-                  Forgot password?
-                </a>
-              </div>
-            )}
+            <div className="text-right">
+              <a href="/forgot-password" className="text-sm text-primary hover:underline">
+                Forgot password?
+              </a>
+            </div>
 
-            {/* Inline error banner */}
             {inlineError && (
               <div className="flex items-start gap-2.5 p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-sm text-destructive">
                 <AlertCircle size={16} className="shrink-0 mt-0.5" />
@@ -195,23 +125,10 @@ const Auth = () => {
               type="submit"
               disabled={loading}
               className="w-full btn-primary"
-              onClick={() => setInlineError(null)}
             >
-              {loading ? "Please wait..." : isLogin ? "Sign In" : "Create Account"}
+              {loading ? "Please wait..." : "Sign In"}
             </button>
           </form>
-
-          {/* Demo Login Button */}
-          {isLogin && (
-            <button
-              onClick={handleDemoLogin}
-              disabled={loading}
-              className="w-full mt-3 px-6 py-3 bg-gradient-to-r from-accent/10 to-primary/10 text-foreground font-semibold rounded-xl border-2 border-primary/30 transition-all duration-300 hover:border-primary/50 hover:shadow-lg hover:shadow-primary/10 flex items-center justify-center gap-2"
-            >
-              <Sparkles size={18} className="text-primary" />
-              Try Demo Account
-            </button>
-          )}
 
           {/* Divider */}
           <div className="relative my-6">
@@ -231,10 +148,10 @@ const Auth = () => {
                 redirect_uri: window.location.origin,
               });
               if (error) {
-                toast({ 
-                  title: "Google sign in failed", 
-                  description: error.message, 
-                  variant: "destructive" 
+                toast({
+                  title: "Google sign in failed",
+                  description: error.message,
+                  variant: "destructive",
                 });
               }
             }}
@@ -248,25 +165,6 @@ const Auth = () => {
             </svg>
             Continue with Google
           </button>
-
-          <p className="text-center text-sm text-muted-foreground mt-6">
-            {isLogin ? "Don't have an account?" : "Already have an account?"}{" "}
-            <button
-              onClick={() => { setIsLogin(!isLogin); setInlineError(null); }}
-              className="text-primary font-medium hover:underline"
-            >
-              {isLogin ? "Sign up" : "Sign in"}
-            </button>
-          </p>
-
-          {/* Demo Credentials Info */}
-          {isLogin && (
-            <div className="mt-6 p-4 bg-primary/5 border border-primary/20 rounded-xl">
-              <p className="text-xs text-muted-foreground text-center">
-                <span className="font-semibold text-primary">Demo Credentials:</span> Click "Try Demo Account" to explore all features without signing up
-              </p>
-            </div>
-          )}
         </div>
       </motion.div>
     </div>
