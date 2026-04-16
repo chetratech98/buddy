@@ -98,6 +98,28 @@ const ContentPlan = () => {
           </button>
         </nav>
 
+        {/* Sign-in CTA for anonymous users */}
+        {!user && (
+          <div className="mb-8 flex items-center justify-between gap-4 p-5 rounded-2xl bg-primary/5 border border-primary/20">
+            <div className="flex items-start gap-3">
+              <Sparkles size={20} className="text-primary shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-sm">Sign in to generate your real content plan</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Your niche <strong>"{niche}"</strong> is ready. Create a free account to generate a
+                  30-day plan using live Google search data — no demo data.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => navigate("/auth")}
+              className="shrink-0 bg-primary text-primary-foreground text-sm font-semibold px-5 py-2.5 rounded-xl hover:opacity-90 transition-all whitespace-nowrap"
+            >
+              Sign In / Sign Up →
+            </button>
+          </div>
+        )}
+
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
             <Calendar size={28} className="text-primary" aria-hidden="true" />

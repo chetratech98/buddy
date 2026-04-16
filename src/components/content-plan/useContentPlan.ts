@@ -207,15 +207,16 @@ export function useContentPlan() {
         // Use existing serpInsights if fetch fails
       }
 
-      // Guard: must be logged in to generate real plans
+      // Guard: must be logged in — redirect to auth, preserving niche in sessionStorage
       if (!user) {
         clearInterval(progressInterval);
         setGenerating(false);
         toast({
-          title: "Sign in required",
-          description: "Please sign in to generate a real content plan.",
-          variant: "destructive",
+          title: "Sign in to generate your plan",
+          description: "Create a free account to generate a real AI content plan with live Google data.",
         });
+        // Small delay so user reads the toast, then redirect
+        setTimeout(() => navigate("/auth"), 1500);
         return;
       }
 
