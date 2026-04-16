@@ -14,7 +14,6 @@
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -179,17 +178,9 @@ serve(async (req) => {
     });
 
   try {
-    // ── Auth ────────────────────────────────────────────────────────────────
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) return json({ error: "Unauthorized" }, 401);
-
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
-      { global: { headers: { Authorization: authHeader } } }
-    );
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) return json({ error: "Unauthorized" }, 401);
+    // ── Auth (optional — app runs with auth bypassed) ────────────────────────
+    // No hard auth block; anyone with the anon key can call this function.
+    // DB saves are handled client-side only when a session exists.
 
     // ── Input validation ─────────────────────────────────────────────────────
     const body = await req.json();

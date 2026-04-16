@@ -207,19 +207,6 @@ export function useContentPlan() {
         // Use existing serpInsights if fetch fails
       }
 
-      // Guard: must be logged in — redirect to auth, preserving niche in sessionStorage
-      if (!user) {
-        clearInterval(progressInterval);
-        setGenerating(false);
-        toast({
-          title: "Sign in to generate your plan",
-          description: "Create a free account to generate a real AI content plan with live Google data.",
-        });
-        // Small delay so user reads the toast, then redirect
-        setTimeout(() => navigate("/auth"), 1500);
-        return;
-      }
-
       const allKeywords = [...keywords, ...longTailKeywords];
       const { data, error } = await supabase.functions.invoke("generate-content-plan", {
         body: {
@@ -245,11 +232,16 @@ export function useContentPlan() {
       if (newPlan.length === 0) throw new Error("AI returned an empty plan. Please try again.");
 
       setPlan(newPlan);
-      const id = await savePlanData(newPlan, savedPlanId);
-      setSavedPlanId(id);
+
+      // Save to DB only when logged in
+      if (user) {
+        const id = await savePlanData(newPlan, savedPlanId);
+        setSavedPlanId(id);
+      }
+
       toast({
         title: `✅ Real content plan ready!`,
-        description: `${newPlan.length} posts planned from live Google data (${data.meta?.dataSource ?? "AI"}).`,
+        description: `${newPlan.length} posts from live Google data (${data.meta?.dataSource ?? "AI"}).`,
       });
     } catch (e: any) {
       clearInterval(progressInterval);
