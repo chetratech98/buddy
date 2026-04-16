@@ -10,7 +10,7 @@ import { Progress } from "@/components/ui/progress";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useAuth } from "@/contexts/AuthContext";
-import { Navigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -68,6 +68,7 @@ const priorityColors: Record<string, string> = {
 
 const GetStarted = () => {
   const { user, loading } = useAuth();
+  const navigate = useNavigate();
   const [url, setUrl] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
@@ -172,6 +173,8 @@ const GetStarted = () => {
       } else if (data?.success && data.data) {
         const analysisData = { ...data.data, website_url: trimmed };
         setResult(analysisData);
+        sessionStorage.setItem("siteAnalysis", JSON.stringify(analysisData));
+        setSaved(true);
 
         // Save to database (authentication required)
         if (user) {
@@ -191,6 +194,8 @@ const GetStarted = () => {
             setSaved(true);
             toast({ title: "Analysis saved", description: "Your niche and keywords have been saved." });
           }
+        } else {
+          toast({ title: "Analysis complete", description: "Next step unlocked. Continue to SERP Analysis." });
         }
       } else {
         toast({ title: "Unexpected response", description: "Please try again.", variant: "destructive" });
@@ -532,6 +537,18 @@ const GetStarted = () => {
                 </Card>
               )}
             </motion.div>
+          )}
+
+          {result && (
+            <div className="mt-8 flex justify-end">
+              <Button
+                onClick={() => navigate("/seo-analysis")}
+                className="h-11 px-6 rounded-xl"
+              >
+                Continue to SERP Analysis
+                <ArrowRight size={16} className="ml-2" />
+              </Button>
+            </div>
           )}
         </motion.div>
       </main>

@@ -261,24 +261,6 @@ const SeoAnalysis = () => {
     setAnalysisProgress({ current: 0, total: keywords.length, status: "Initializing..." });
     
     try {
-      // If not logged in or backend not available, use demo data
-      if (!user) {
-        // Simulate analysis delay
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        setAnalysisProgress({ current: keywords.length, total: keywords.length, status: "Analysis complete!" });
-        
-        // Use demo data
-        setResult(DEMO_SEO_ANALYSIS);
-        if (DEMO_SEO_ANALYSIS?.keywords?.length) {
-          setSelectedKeyword(DEMO_SEO_ANALYSIS.keywords[0].keyword);
-        }
-        toast({ 
-          title: "Demo Analysis Complete", 
-          description: `Showing demo results for ${DEMO_SEO_ANALYSIS.keywords.length} keywords. Login to save results and get real data.` 
-        });
-        return;
-      }
-
       // Simulate progress updates
       const progressInterval = setInterval(() => {
         setAnalysisProgress(prev => {
@@ -306,6 +288,7 @@ const SeoAnalysis = () => {
       if (data?.error) throw new Error(data.error);
       setResult(data);
       if (data?.keywords?.length) setSelectedKeyword(data.keywords[0].keyword);
+      sessionStorage.setItem("serpAnalysis", JSON.stringify(data));
 
       if (user) {
         const { data: newAnalysis } = await supabase.from("serp_analyses" as any).insert({
@@ -320,7 +303,12 @@ const SeoAnalysis = () => {
           setAnalysisHistory(prev => [newAnalysis, ...prev.slice(0, 9)]);
         }
       }
-      toast({ title: "Analysis complete", description: `Successfully analyzed ${data?.keywords?.length || 0} keywords.` });
+      toast({
+        title: "Analysis complete",
+        description: user
+          ? `Successfully analyzed ${data?.keywords?.length || 0} keywords.`
+          : `Successfully analyzed ${data?.keywords?.length || 0} keywords with real data.`
+      });
     } catch (err: any) {
       console.error("Analysis error:", err);
       
