@@ -229,6 +229,106 @@ serve(async (req) => {
       const totalRelated = serpResults.reduce((n, d) => n + d.relatedSearches.length, 0);
       serpDataSummary = `${serpResults.length} keywords researched, ${totalPAA} PAA questions, ${totalRelated} related searches`;
       console.log(`[content-plan] SERP summary: ${serpDataSummary}`);
+    } else if (body.serpBriefs?.length) {
+      // Preferred: use cluster briefs from the serp-layer auto-blog pipeline
+      console.log("[content-plan] Using serp-layer auto-blog briefs");
+
+      // Support both the new nested format and the old flat format
+      const isNestedFormat = body.serpBriefs[0]?.keyword_cluster !== undefined;
+
+      if (isNestedFormat) {
+        // New nested format from the 8-module pipeline
+        const briefs: Array<{
+          keyword_cluster:        { primary_keyword: string; secondary_keywords: string[]; serp_cluster_id: string };
+          serp_summary:           { dominant_intent: string; shared_patterns: string[] };
+          content_recommendation: {
+            article_type:           string;
+            suggested_title_angles: string[];
+            recommended_outline:    string[];
+            must_cover_topics:      string[];
+            faq_questions:          string[];
+            content_gaps_to_win:    string[];
+          };
+          scoring:  { opportunity_score: number; difficulty_proxy: number; business_relevance: number };
+          action:   { decision: string; reason: string };
+          _meta?:   { notes_for_planner?: string; dominant_page_types?: string[]; common_headings?: string[] };
+        }> = body.serpBriefs;
+
+        // Only use actionable clusters (exclude skip)
+        const actionable = briefs.filter((b) => b.action.decision !== "skip");
+
+        serpContext = "\n\n=== AUTO BLOG SERP PIPELINE BRIEFS ===\n";
+        serpContext += "Live SERP intelligence with pre-built article outlines and content gaps. ";
+        serpContext += "Use suggested_title_angles directly as post titles. Use recommended_outline as the article structure.\n\n";
+
+        for (const b of actionable.slice(0, 12)) {
+          const kc  = b.keyword_cluster;
+          const ss  = b.serp_summary;
+          const cr  = b.content_recommendation;
+          const sc  = b.scoring;
+          const act = b.action;
+
+          serpContext += `## "${kc.primary_keyword}" [${act.decision} | opportunity: ${sc.opportunity_score}]\n`;
+          serpContext += `- Intent: ${ss.dominant_intent} | Article type: ${cr.article_type}\n`;
+          if (kc.secondary_keywords?.length)
+            serpContext += `- Also targets: ${kc.secondary_keywords.slice(0, 4).join(", ")}\n`;
+          if (ss.shared_patterns?.length)
+            serpContext += `- Competitors use: ${ss.shared_patterns.join(", ")}\n`;
+          if (cr.suggested_title_angles?.length)
+            serpContext += `- TITLE OPTIONS (use these): ${cr.suggested_title_angles.slice(0, 3).join(" | ")}\n`;
+          if (cr.must_cover_topics?.length)
+            serpContext += `- Must cover: ${cr.must_cover_topics.slice(0, 4).join("; ")}\n`;
+          if (cr.content_gaps_to_win?.length)
+            serpContext += `- Content gaps to win: ${cr.content_gaps_to_win.slice(0, 3).join("; ")}\n`;
+          if (cr.faq_questions?.length)
+            serpContext += `- FAQ questions: ${cr.faq_questions.slice(0, 3).join(" | ")}\n`;
+          if (b._meta?.notes_for_planner)
+            serpContext += `- Note: ${b._meta.notes_for_planner}\n`;
+          serpContext += "\n";
+        }
+
+        const allFAQ = actionable.flatMap((b) => b.content_recommendation.faq_questions ?? []);
+        const writeNew = actionable.filter((b) => b.action.decision === "write_new_article").length;
+        const refresh  = actionable.filter((b) => b.action.decision === "refresh_existing").length;
+        serpContext += `## Pipeline Summary\n`;
+        serpContext += `${actionable.length} actionable clusters: ${writeNew} new articles + ${refresh} refreshes. `;
+        serpContext += `${allFAQ.length} real PAA questions identified.\n`;
+        serpContext += `Use the suggested title angles and must_cover_topics to drive each article idea.\n`;
+
+      } else {
+        // Old flat format (backward compat)
+        const briefs: Array<{
+          primary_keyword:     string;
+          secondary_keywords?: string[];
+          dominant_intent?:    string;
+          intent_confidence?:  number;
+          dominant_page_types?:  string[];
+          common_questions?:   string[];
+          common_headings?:    string[];
+          content_gaps?:       string[];
+          recommended_page_type?: string;
+          suggested_title_angles?: string[];
+          notes_for_planner?:  string;
+          priority_score?:     number;
+        }> = body.serpBriefs;
+
+        serpContext = "\n\n=== SERP CLUSTER BRIEFS ===\n";
+        for (const b of briefs.slice(0, 10)) {
+          serpContext += `## Cluster: "${b.primary_keyword}" (priority: ${b.priority_score ?? "?"})\n`;
+          serpContext += `- Intent: ${b.dominant_intent ?? "unknown"}\n`;
+          serpContext += `- Recommended page type: ${b.recommended_page_type ?? "guide"}\n`;
+          if (b.secondary_keywords?.length)
+            serpContext += `- Also targets: ${b.secondary_keywords.slice(0, 5).join(", ")}\n`;
+          if (b.common_questions?.length)
+            serpContext += `- PAA questions: ${b.common_questions.slice(0, 4).join(" | ")}\n`;
+          if (b.content_gaps?.length)
+            serpContext += `- Content gaps: ${b.content_gaps.slice(0, 3).join("; ")}\n`;
+          if (b.suggested_title_angles?.length)
+            serpContext += `- Suggested titles: ${b.suggested_title_angles.slice(0, 3).join(" | ")}\n`;
+          serpContext += "\n";
+        }
+      }
+
     } else if (body.serpInsights?.keywords?.length) {
       // Fallback: use pre-existing SERP analysis from seo-analysis function
       console.log("[content-plan] Using pre-existing SERP insights (no SERP_API_KEY or no keywords)");
@@ -354,7 +454,7 @@ ${serpContext}`;
       meta: {
         serpResearched: !!SERP_API_KEY && keywords.length > 0,
         itemCount:      plan.length,
-        dataSource:     SERP_API_KEY ? "live_serp + openai" : "openai_only",
+        dataSource:     body.serpBriefs?.length ? "serp_briefs + openai" : SERP_API_KEY ? "live_serp + openai" : "openai_only",
         serpSummary:    serpDataSummary || null,
       },
     });
