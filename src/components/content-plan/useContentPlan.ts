@@ -53,6 +53,32 @@ export function useContentPlan() {
       }
     }
     
+    // CRITICAL FIX: Load SERP analysis from sessionStorage (for non-logged-in users)
+    const storedSerpAnalysis = sessionStorage.getItem('serpAnalysis');
+    if (storedSerpAnalysis) {
+      try {
+        const serpData = JSON.parse(storedSerpAnalysis);
+        console.log('[content-plan] Loading SERP analysis from sessionStorage:', serpData);
+        setSerpInsights(serpData);
+        
+        // Extract long-tail keywords from SERP analysis
+        if (serpData?.keywords) {
+          const relatedKws = serpData.keywords
+            .flatMap((k: any) => k.relatedKeywords || [])
+            .filter((kw: string, i: number, arr: string[]) => arr.indexOf(kw) === i)
+            .slice(0, 10);
+          if (relatedKws.length) {
+            setLongTailKeywords((prev) => {
+              const combined = [...new Set([...prev, ...relatedKws])];
+              return combined.slice(0, 20);
+            });
+          }
+        }
+      } catch (e) {
+        console.error('Failed to parse stored SERP analysis:', e);
+      }
+    }
+    
     // If user is logged in, load from database (overrides session storage)
     if (!user) {
       setProfileLoading(false);
@@ -210,29 +236,60 @@ export function useContentPlan() {
       // Step 2: Re-fetch latest SERP analysis to ensure fresh data
       setGenerationProgress(30);
       let freshSerpInsights = serpInsights;
-      try {
-        const { data: freshSerp } = await supabase
-          .from("serp_analyses" as any)
-          .select("analysis, keywords")
-          .eq("user_id", user!.id)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (freshSerp) {
-          freshSerpInsights = (freshSerp as any).analysis;
-          setSerpInsights(freshSerpInsights);
-          // Also update long-tail keywords from fresh SERP
-          const analysis = (freshSerp as any).analysis;
-          if (analysis?.keywords) {
-            const relatedKws = analysis.keywords
-              .flatMap((k: any) => k.relatedKeywords || [])
-              .filter((kw: string, i: number, arr: string[]) => arr.indexOf(kw) === i)
-              .slice(0, 10);
-            if (relatedKws.length) setLongTailKeywords((prev) => [...new Set([...prev, ...relatedKws])].slice(0, 15));
+      
+      // Try database first (for logged-in users)
+      if (user) {
+        try {
+          const { data: freshSerp } = await supabase
+            .from("serp_analyses" as any)
+            .select("analysis, keywords")
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (freshSerp) {
+            freshSerpInsights = (freshSerp as any).analysis;
+            setSerpInsights(freshSerpInsights);
+            console.log('[content-plan] Loaded SERP insights from database');
+            // Also update long-tail keywords from fresh SERP
+            const analysis = (freshSerp as any).analysis;
+            if (analysis?.keywords) {
+              const relatedKws = analysis.keywords
+                .flatMap((k: any) => k.relatedKeywords || [])
+                .filter((kw: string, i: number, arr: string[]) => arr.indexOf(kw) === i)
+                .slice(0, 10);
+              if (relatedKws.length) setLongTailKeywords((prev) => [...new Set([...prev, ...relatedKws])].slice(0, 15));
+            }
           }
+        } catch (e) {
+          console.log('[content-plan] Database SERP fetch failed, trying sessionStorage:', e);
         }
-      } catch {
-        // Use existing serpInsights if fetch fails
+      }
+      
+      // Fallback to sessionStorage (for non-logged-in users or if database fetch failed)
+      if (!freshSerpInsights) {
+        try {
+          const storedSerpAnalysis = sessionStorage.getItem('serpAnalysis');
+          if (storedSerpAnalysis) {
+            const serpData = JSON.parse(storedSerpAnalysis);
+            freshSerpInsights = serpData;
+            setSerpInsights(serpData);
+            console.log('[content-plan] Loaded SERP insights from sessionStorage');
+            
+            // Extract long-tail keywords from SERP analysis
+            if (serpData?.keywords) {
+              const relatedKws = serpData.keywords
+                .flatMap((k: any) => k.relatedKeywords || [])
+                .filter((kw: string, i: number, arr: string[]) => arr.indexOf(kw) === i)
+                .slice(0, 10);
+              if (relatedKws.length) {
+                setLongTailKeywords((prev) => [...new Set([...prev, ...relatedKws])].slice(0, 15));
+              }
+            }
+          }
+        } catch (e) {
+          console.error('[content-plan] Failed to load SERP from sessionStorage:', e);
+        }
       }
 
       setGenerationProgress(50);
