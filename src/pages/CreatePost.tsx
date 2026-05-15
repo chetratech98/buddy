@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   Sparkles, Loader2, Trash2, AlertTriangle, CheckCircle2,
   ChevronDown, ChevronUp, TrendingUp, Search, ExternalLink,
-  Info, Zap,
+  Info, Zap, Lightbulb, Target, XCircle, Layers, FileText,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -176,6 +176,11 @@ const CreatePost = () => {
   const [generating, setGenerating] = useState(false);
   const [step, setStep] = useState<"prompt" | "edit">("prompt");
 
+  // Content intelligence preview
+  const [contentIntelligence, setContentIntelligence] = useState<any>(null);
+  const [loadingIntelligence, setLoadingIntelligence] = useState(false);
+  const [showIntelligencePreview, setShowIntelligencePreview] = useState(false);
+
   // Edit step — post fields
   const [title, setTitle] = useState("");
   const [excerpt, setExcerpt] = useState("");
@@ -280,6 +285,44 @@ const CreatePost = () => {
       if (duplicateDebounce.current) clearTimeout(duplicateDebounce.current);
     };
   }, [topic, keywords, user]);
+
+  // ── Fetch Content Intelligence ─────────────────────────────────────────────
+  const fetchContentIntelligence = async () => {
+    if (!keywords.trim() && !topic.trim()) {
+      toast({ title: "Enter a keyword", description: "Add a keyword to get content intelligence.", variant: "destructive" });
+      return;
+    }
+    
+    const primaryKeyword = keywords.trim() ? keywords.split(",")[0].trim() : topic.slice(0, 100);
+    setLoadingIntelligence(true);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke("content-intelligence", {
+        body: {
+          keyword: primaryKeyword,
+          userId: user?.id,
+          includeOutline: true,
+          includeHeadings: true,
+          includeFAQ: true,
+        },
+      });
+      
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+      
+      setContentIntelligence(data);
+      setShowIntelligencePreview(true);
+      toast({ 
+        title: "Content Intelligence Ready", 
+        description: `Analyzed "${primaryKeyword}" with ${data.outline?.sections?.length || 0} recommended sections.` 
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Failed to fetch content intelligence.";
+      toast({ title: "Intelligence fetch failed", description: message, variant: "destructive" });
+    } finally {
+      setLoadingIntelligence(false);
+    }
+  };
 
   // ── Generate blog post ─────────────────────────────────────────────────────
   const handleGenerate = async () => {
@@ -514,6 +557,258 @@ const CreatePost = () => {
                 {targetWordCount > 1500 && targetWordCount <= 2500 && "In-depth guides, SEO-optimized"}
                 {targetWordCount > 2500 && "Comprehensive tutorials, pillar content"}
               </p>
+            </div>
+
+            {/* Content Intelligence Preview */}
+            <div className="space-y-3">
+              <button 
+                onClick={fetchContentIntelligence} 
+                disabled={loadingIntelligence || (!keywords.trim() && !topic.trim())}
+                className="w-full btn-secondary flex items-center justify-center gap-2"
+              >
+                {loadingIntelligence ? (
+                  <><Loader2 size={18} className="animate-spin" /> Analyzing SERP data…</>
+                ) : (
+                  <><Lightbulb size={18} /> Get Content Intelligence</>
+                )}
+              </button>
+              
+              {contentIntelligence && showIntelligencePreview && (
+                <div className="card-elevated p-6 space-y-4 border-2 border-primary/20">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h3 className="text-lg font-bold flex items-center gap-2">
+                        <Target size={18} className="text-primary" />
+                        Content Intelligence
+                      </h3>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        AI-powered insights from SERP analysis
+                      </p>
+                    </div>
+                    <button 
+                      onClick={() => setShowIntelligencePreview(false)}
+                      className="text-muted-foreground hover:text-foreground"
+                      aria-label="Close intelligence preview"
+                    >
+                      <XCircle size={20} />
+                    </button>
+                  </div>
+
+                  {/* Search Intent */}
+                  {contentIntelligence.searchIntent && (
+                    <div className="flex items-center gap-3 p-3 bg-primary/5 rounded-lg">
+                      <TrendingUp size={16} className="text-primary" />
+                      <div className="flex-1">
+                        <p className="text-xs font-medium text-muted-foreground">Search Intent</p>
+                        <p className="text-sm font-semibold">
+                          {contentIntelligence.searchIntent.primary} 
+                          <span className="text-xs text-muted-foreground ml-2">
+                            ({contentIntelligence.searchIntent.confidence}% confidence)
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Content Benchmark */}
+                  {contentIntelligence.optimization && (
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="p-3 bg-muted/30 rounded-lg">
+                        <p className="text-xs text-muted-foreground">Target Words</p>
+                        <p className="text-lg font-bold text-primary">
+                          {contentIntelligence.optimization.targetWordCount}
+                        </p>
+                      </div>
+                      <div className="p-3 bg-muted/30 rounded-lg">
+                        <p className="text-xs text-muted-foreground">H2 Sections</p>
+                        <p className="text-lg font-bold text-primary">
+                          {contentIntelligence.optimization.recommendedH2Count}
+                        </p>
+                      </div>
+                      <div className="p-3 bg-muted/30 rounded-lg">
+                        <p className="text-xs text-muted-foreground">Content Type</p>
+                        <p className="text-sm font-semibold mt-1">
+                          {contentIntelligence.contentBenchmark?.dominantContentType || 'guide'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Outline Preview */}
+                  {contentIntelligence.outline?.sections && (
+                    <div>
+                      <p className="text-sm font-medium mb-2 flex items-center gap-2">
+                        <Layers size={14} />
+                        Recommended Outline ({contentIntelligence.outline.sections.length} sections)
+                      </p>
+                      <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
+                        {contentIntelligence.outline.sections.slice(0, 8).map((section: any, idx: number) => (
+                          <div 
+                            key={idx} 
+                            className={`p-2 rounded border text-sm ${
+                              section.priority === 'must-have' 
+                                ? 'bg-primary/5 border-primary/20' 
+                                : 'bg-muted/20 border-border'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium">{section.heading}</span>
+                              <span className="text-xs text-muted-foreground">
+                                ~{section.estimatedWords}w
+                              </span>
+                            </div>
+                            {section.priority === 'must-have' && (
+                              <span className="text-xs text-primary">⭐ Required</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Heading Patterns (Phase 2) */}
+                  {contentIntelligence.headingPatterns && contentIntelligence.headingPatterns.commonHeadings && contentIntelligence.headingPatterns.commonHeadings.length > 0 && (
+                    <div>
+                      <p className="text-sm font-medium mb-2 flex items-center gap-2">
+                        <TrendingUp size={14} className="text-blue-500" />
+                        Common Competitor Headings
+                      </p>
+                      <div className="space-y-1 text-xs">
+                        {contentIntelligence.headingPatterns.commonHeadings.slice(0, 5).map((pattern: any, idx: number) => (
+                          <div key={idx} className="flex items-center justify-between p-2 bg-blue-50 dark:bg-blue-950/20 rounded border border-blue-200 dark:border-blue-900">
+                            <span className="font-medium">{pattern.heading}</span>
+                            <span className="text-blue-600 dark:text-blue-400">{pattern.percentage}%</span>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Avg H2s: {contentIntelligence.headingPatterns.avgH2Count} | Avg H3s: {contentIntelligence.headingPatterns.avgH3Count}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* FAQ Questions with AI Answers (Phase 2 Enhanced) */}
+                  {contentIntelligence.faq && contentIntelligence.faq.length > 0 && (
+                    <div>
+                      <p className="text-sm font-medium mb-2 flex items-center gap-2">
+                        <FileText size={14} />
+                        FAQ Questions ({contentIntelligence.faq.length})
+                      </p>
+                      <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
+                        {contentIntelligence.faq.slice(0, 5).map((faq: any, idx: number) => (
+                          <div key={idx} className="p-2 bg-green-50 dark:bg-green-950/20 rounded border border-green-200 dark:border-green-900">
+                            <div className="flex items-start gap-2 mb-1">
+                              <CheckCircle2 size={12} className="shrink-0 mt-0.5 text-green-600 dark:text-green-400" />
+                              <p className="text-xs font-semibold text-green-900 dark:text-green-100">{faq.question}</p>
+                            </div>
+                            {faq.answer && (
+                              <p className="text-xs text-green-700 dark:text-green-300 pl-5">
+                                {faq.answer.substring(0, 150)}{faq.answer.length > 150 ? '...' : ''}
+                              </p>
+                            )}
+                            <div className="flex items-center gap-2 pl-5 mt-1">
+                              <span className="text-[10px] px-1.5 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded">
+                                {faq.source === 'PAA' ? 'People Also Ask' : faq.source === 'competitor' ? 'Competitor' : 'AI Generated'}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        AI-powered answers optimized for featured snippets
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Content Gaps */}
+                  {contentIntelligence.contentGaps && contentIntelligence.contentGaps.length > 0 && (
+                    <div>
+                      <p className="text-sm font-medium mb-2 flex items-center gap-2">
+                        <Zap size={14} className="text-yellow-500" />
+                        Quick Wins
+                      </p>
+                      <div className="space-y-1 text-xs text-muted-foreground">
+                        {contentIntelligence.contentGaps.slice(0, 2).map((gap: string, idx: number) => (
+                          <div key={idx} className="flex items-start gap-2">
+                            <Sparkles size={12} className="shrink-0 mt-0.5 text-yellow-500" />
+                            <span>{gap}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Schema Markup (Phase 2) */}
+                  {contentIntelligence.schema && contentIntelligence.schema.length > 0 && (
+                    <div>
+                      <p className="text-sm font-medium mb-2 flex items-center gap-2">
+                        <Info size={14} className="text-purple-500" />
+                        Schema Markup ({contentIntelligence.schema.length} types)
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {contentIntelligence.schema.map((schema: any, idx: number) => (
+                          <span key={idx} className="px-2 py-1 text-xs bg-purple-50 dark:bg-purple-950/20 text-purple-700 dark:text-purple-300 rounded border border-purple-200 dark:border-purple-900">
+                            {schema.type}
+                          </span>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Rich results enabled for better SERP visibility
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Semantic Entities (Phase 2 Enhanced) */}
+                  {contentIntelligence.semanticEntities && (
+                    <div>
+                      <p className="text-sm font-medium mb-2 flex items-center gap-2">
+                        <Sparkles size={14} className="text-indigo-500" />
+                        Semantic Entities
+                      </p>
+                      <div className="space-y-2">
+                        {contentIntelligence.semanticEntities.required && contentIntelligence.semanticEntities.required.length > 0 && (
+                          <div>
+                            <p className="text-xs font-medium text-muted-foreground mb-1">Required Keywords</p>
+                            <div className="flex flex-wrap gap-1">
+                              {contentIntelligence.semanticEntities.required.slice(0, 8).map((entity: string, idx: number) => (
+                                <span key={idx} className="px-2 py-0.5 text-xs bg-indigo-100 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 rounded font-medium">
+                                  {entity}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {contentIntelligence.semanticEntities.recommended && contentIntelligence.semanticEntities.recommended.length > 0 && (
+                          <div>
+                            <p className="text-xs font-medium text-muted-foreground mb-1">Recommended</p>
+                            <div className="flex flex-wrap gap-1">
+                              {contentIntelligence.semanticEntities.recommended.slice(0, 10).map((entity: string, idx: number) => (
+                                <span key={idx} className="px-2 py-0.5 text-xs bg-indigo-50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 rounded">
+                                  {entity}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {contentIntelligence.semanticEntities.densityRecommendations && (
+                          <div className="p-2 bg-indigo-50 dark:bg-indigo-950/20 rounded border border-indigo-200 dark:border-indigo-900">
+                            <p className="text-xs text-indigo-900 dark:text-indigo-100">
+                              <span className="font-semibold">Entity Density:</span> {(contentIntelligence.semanticEntities.densityRecommendations.current * 100).toFixed(1)}%
+                              <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] ${
+                                contentIntelligence.semanticEntities.densityRecommendations.status === 'good' 
+                                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' 
+                                  : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
+                              }`}>
+                                {contentIntelligence.semanticEntities.densityRecommendations.status === 'good' ? '✓ Optimal' : '⚠ Low'}
+                              </span>
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <button onClick={handleGenerate} disabled={generating} className="w-full btn-primary">

@@ -14,6 +14,11 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL UNIQUE,
   display_name TEXT,
   avatar_url TEXT,
+  website_url TEXT,
+  niche TEXT,
+  keywords TEXT[] DEFAULT '{}',
+  org_goals TEXT DEFAULT '',
+  org_vision TEXT DEFAULT '',
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );
@@ -84,7 +89,19 @@ CREATE TABLE IF NOT EXISTS public.blog_posts (
   content TEXT NOT NULL DEFAULT '',
   excerpt TEXT,
   keywords TEXT[] DEFAULT '{}',
-  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'published')),
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'review', 'scheduled', 'published')),
+  category TEXT DEFAULT '',
+  tags TEXT[] DEFAULT '{}',
+  seo_title TEXT DEFAULT '',
+  seo_description TEXT DEFAULT '',
+  featured_image_url TEXT DEFAULT '',
+  scheduled_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+  published_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+  platform_wordpress BOOLEAN DEFAULT false,
+  platform_medium BOOLEAN DEFAULT false,
+  platform_status JSONB DEFAULT '{}',
+  seo_score INTEGER DEFAULT NULL,
+  word_count INTEGER DEFAULT NULL,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );

@@ -213,11 +213,35 @@ serve(async (req) => {
 
     if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not configured");
 
-    // ── PHASE 1: Competitor Research (real live data) ─────────────────────────
-    // Use the first keyword (or topic) as the primary search query
+    // ── PHASE 0: Content Intelligence (get SERP insights) ─────────────────────
     const primaryKeyword = keywords
       ? keywords.split(",")[0].trim()
       : topic.slice(0, 100);
+    
+    let contentIntelligence: any = null;
+    try {
+      console.log(`[generate-blog] Fetching content intelligence for: "${primaryKeyword}"`);
+      const intelligenceRes = await supabase.functions.invoke("content-intelligence", {
+        body: {
+          keyword: primaryKeyword,
+          userId: user.id,
+          includeOutline: true,
+          includeHeadings: true,
+          includeFAQ: true,
+        },
+      });
+      
+      if (intelligenceRes.data && !intelligenceRes.error) {
+        contentIntelligence = intelligenceRes.data;
+        console.log(`[generate-blog] Content intelligence loaded: ${contentIntelligence.outline?.sections?.length || 0} sections`);
+      } else {
+        console.log("[generate-blog] No content intelligence available, proceeding with standard generation");
+      }
+    } catch (e) {
+      console.log("[generate-blog] Content intelligence fetch failed, proceeding with standard generation:", e);
+    }
+
+    // ── PHASE 1: Competitor Research (real live data) ─────────────────────────
 
     let competitorContext = "";
     let competitorUrls: Array<{ url: string; title: string; domain: string; snippet: string }> = [];
@@ -244,7 +268,7 @@ serve(async (req) => {
       }
     }
 
-    // ── PHASE 2: Generate blog post (grounded in competitor data) ─────────────
+    // ── PHASE 2: Generate blog post (grounded in competitor data + intelligence) ──
     const competitorSection = competitorContext
       ? `\n\n## LIVE COMPETITOR INTELLIGENCE (from current Google top results)\nAnalyze these top-ranking pages and CREATE SUPERIOR content that covers their topics more comprehensively, fills their gaps, and provides more unique value:\n\n${competitorContext}\n\n### Your content MUST:\n- Cover all major topics the competitors cover PLUS additional unique angles they miss\n- Be longer and more comprehensive than competitors (target 2,000+ words)\n- Include unique insights, data points, or frameworks not found in any competitor\n- Answer questions competitors leave unanswered`
       : "";
@@ -253,24 +277,65 @@ serve(async (req) => {
       ? `\n\n## CONTENT TEMPLATE TO FOLLOW\nName: ${template.name}\nStructure sections: ${template.structure.join(", ")}\nInstructions: ${template.promptTemplate}`
       : "";
 
+    // Build content intelligence section if available
+    let intelligenceSection = "";
+    let intelligenceWordCount = targetWordCount;
+    let intelligenceTone = tone;
+    
+    if (contentIntelligence) {
+      intelligenceWordCount = contentIntelligence.optimization?.targetWordCount || targetWordCount;
+      intelligenceTone = contentIntelligence.optimization?.toneAndStyle || tone;
+      
+      const outlineSections = contentIntelligence.outline?.sections || [];
+      const faqQuestions = contentIntelligence.faq?.map((f: any) => f.question).slice(0, 5) || [];
+      const semanticEntities = contentIntelligence.semanticEntities?.required || [];
+      const contentGaps = contentIntelligence.contentGaps || [];
+      
+      intelligenceSection = `\n\n## 🎯 CONTENT INTELLIGENCE (from SERP Analysis)
+
+### Search Intent: ${contentIntelligence.searchIntent?.primary || "informational"} (${contentIntelligence.searchIntent?.confidence || 80}% confidence)
+Write in a ${intelligenceTone} style that matches this intent.
+
+### Required Structure (follow this outline exactly):
+${outlineSections.map((s: any, idx: number) => 
+  `${idx + 1}. ${s.heading} (${s.priority === 'must-have' ? '⭐ REQUIRED' : 'recommended'}, ~${s.estimatedWords} words)${s.subtopics && s.subtopics.length > 0 ? '\n   - ' + s.subtopics.join('\n   - ') : ''}`
+).join('\n\n')}
+
+${faqQuestions.length > 0 ? `### FAQ Section (REQUIRED - include these questions):
+${faqQuestions.map((q: string) => `- ${q}`).join('\n')}` : ''}
+
+${semanticEntities.length > 0 ? `### Must-Include Semantic Entities:
+Naturally incorporate these terms/concepts: ${semanticEntities.join(', ')}` : ''}
+
+${contentGaps.length > 0 ? `### Content Gaps to Address (competitive advantages):
+${contentGaps.map((gap: string) => `- ${gap}`).join('\n')}` : ''}
+
+### Content Benchmark:
+- Target word count: ${intelligenceWordCount} words
+- Recommended H2 sections: ${contentIntelligence.optimization?.recommendedH2Count || 8}
+- Recommended H3 subsections: ${contentIntelligence.optimization?.recommendedH3Count || 12}
+- Dominant format: ${contentIntelligence.contentBenchmark?.dominantContentType || 'guide'}`;
+    }
+
     const systemPrompt = `You are an expert SEO content writer with deep knowledge of Google's E-E-A-T principles (Experience, Expertise, Authoritativeness, Trust). You write comprehensive, data-driven blog posts that outrank competitors.
 
 QUALITY STANDARDS:
-- Target ${targetWordCount} words (±10% is acceptable)
+- Target ${intelligenceWordCount} words (±10% is acceptable)
 - Use proper markdown: H2 (##) and H3 (###) headings, bullet lists, bold key terms
-- Include a FAQ section at the end with 3–5 questions (helps win People Also Ask SERP features)
+- ${contentIntelligence?.faq?.length > 0 ? 'Include the FAQ section with the provided questions' : 'Include a FAQ section at the end with 3–5 questions'}
 - Natural keyword integration (1.5–2% density) — never keyword-stuffed
 - Factual, specific, and actionable — no vague filler content
 - Strong intro (hook the reader in the first 2 sentences) and clear conclusion with CTA
 - Add real examples, case studies, statistics, and actionable tips throughout
 - Use numbered lists, bullet points, and tables for better readability
+- ${contentIntelligence ? 'Follow the EXACT outline structure provided in Content Intelligence section' : 'Create a logical structure'}
 
 Respond in VALID JSON ONLY. No markdown fences outside the JSON.
 JSON format:
 {
   "title": "SEO-optimized title (50–70 chars)",
   "excerpt": "Compelling 1–2 sentence summary for meta description (120–160 chars)",
-  "content": "Full markdown content (${targetWordCount} words target)",
+  "content": "Full markdown content (${intelligenceWordCount} words target)",
   "keywords": ["keyword1", "keyword2", ...],
   "wordCount": <integer>,
   "competitorUrlsAnalyzed": <integer>
@@ -280,14 +345,20 @@ JSON format:
 
 TOPIC: ${topic}
 ${keywords ? `TARGET KEYWORDS: ${keywords}` : ""}
-TONE: ${tone}
-TARGET LENGTH: ${targetWordCount} words
+TONE: ${intelligenceTone}
+TARGET LENGTH: ${intelligenceWordCount} words
+${intelligenceSection}
 ${competitorSection}
 ${templateSection}
 
-IMPORTANT: The content field must be a complete, polished article of ${targetWordCount} words (±10%). Include a FAQ section at the end.`;
+CRITICAL REQUIREMENTS:
+1. Follow the outline structure EXACTLY if provided in Content Intelligence
+2. Answer all FAQ questions if provided
+3. Include all semantic entities naturally
+4. The content field must be a complete, polished article of ${intelligenceWordCount} words (±10%)
+5. ${contentIntelligence ? 'Address all content gaps mentioned to differentiate from competitors' : 'Provide unique insights'}`;
 
-    console.log("[generate-blog] Calling OpenAI for generation...");
+    console.log("[generate-blog] Calling OpenAI for generation with content intelligence...");
     const rawGeneration = await callOpenAI(
       OPENAI_API_KEY,
       [
@@ -392,11 +463,26 @@ If everything is correct, return unchanged.`;
     post.wordCount = countWords(post.content || "");
     post.competitorUrlsAnalyzed = competitorUrls.length;
 
+    // Add content intelligence metadata if available
+    const response: any = {
+      ...post,
+      contentIntelligence: contentIntelligence ? {
+        searchIntent: contentIntelligence.searchIntent?.primary,
+        intentConfidence: contentIntelligence.searchIntent?.confidence,
+        targetWordCount: contentIntelligence.optimization?.targetWordCount,
+        recommendedH2Count: contentIntelligence.optimization?.recommendedH2Count,
+        dominantContentType: contentIntelligence.contentBenchmark?.dominantContentType,
+        semanticEntitiesUsed: contentIntelligence.semanticEntities?.required?.slice(0, 5),
+        faqQuestionsAnswered: contentIntelligence.faq?.length || 0,
+        contentGapsAddressed: contentIntelligence.contentGaps?.length || 0,
+      } : null,
+    };
+
     console.log(
-      `[generate-blog] Final: "${post.title}" | ${post.wordCount} words | ${post.competitorUrlsAnalyzed} competitors analyzed`
+      `[generate-blog] Final: "${post.title}" | ${post.wordCount} words | ${post.competitorUrlsAnalyzed} competitors analyzed | Intelligence: ${contentIntelligence ? 'YES' : 'NO'}`
     );
 
-    return jsonResponse(post);
+    return jsonResponse(response);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "unknown_error";
     console.error("[generate-blog] Fatal error:", msg);
