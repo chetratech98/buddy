@@ -20,6 +20,7 @@ export function useContentPlan() {
   const [profileLoading, setProfileLoading] = useState(true);
   const [savedPlanId, setSavedPlanId] = useState<string | null>(null);
   const [serpInsights, setSerpInsights] = useState<any>(null);
+  const [contentIntelligence, setContentIntelligence] = useState<any>(null);
   const [orgGoals, setOrgGoals] = useState("");
   const [orgVision, setOrgVision] = useState("");
   const [generationProgress, setGenerationProgress] = useState(0);
@@ -177,7 +178,37 @@ export function useContentPlan() {
     }, 800);
 
     try {
-      // Re-fetch latest SERP analysis to ensure fresh data
+      // Step 1: Fetch content intelligence for primary keywords
+      let intelligenceData: any = null;
+      try {
+        setGenerationProgress(10);
+        const primaryKeyword = keywords[0] || niche;
+        const { data: intelligence, error: intError } = await supabase.functions.invoke("content-intelligence", {
+          body: {
+            keyword: primaryKeyword,
+            userId: user?.id,
+            includeOutline: true,
+            includeHeadings: true,
+            includeFAQ: true,
+          },
+        });
+        
+        if (!intError && intelligence) {
+          intelligenceData = intelligence;
+          setContentIntelligence(intelligence);
+          
+          // Extract long-tail keywords from FAQ questions and entities
+          const faqKeywords = intelligence.faq?.questions?.map((q: any) => q.question).slice(0, 5) || [];
+          const entityKeywords = intelligence.entities?.required?.slice(0, 5) || [];
+          const newLongTail = [...new Set([...longTailKeywords, ...faqKeywords, ...entityKeywords])];
+          setLongTailKeywords(newLongTail.slice(0, 15));
+        }
+      } catch (e) {
+        console.log('[content-plan] Content intelligence fetch failed, continuing with SERP data:', e);
+      }
+      
+      // Step 2: Re-fetch latest SERP analysis to ensure fresh data
+      setGenerationProgress(30);
       let freshSerpInsights = serpInsights;
       try {
         const { data: freshSerp } = await supabase
@@ -197,13 +228,14 @@ export function useContentPlan() {
               .flatMap((k: any) => k.relatedKeywords || [])
               .filter((kw: string, i: number, arr: string[]) => arr.indexOf(kw) === i)
               .slice(0, 10);
-            if (relatedKws.length) setLongTailKeywords(relatedKws);
+            if (relatedKws.length) setLongTailKeywords((prev) => [...new Set([...prev, ...relatedKws])].slice(0, 15));
           }
         }
       } catch {
         // Use existing serpInsights if fetch fails
       }
 
+      setGenerationProgress(50);
       const allKeywords = [...keywords, ...longTailKeywords];
       const { data, error } = await supabase.functions.invoke("generate-content-plan", {
         body: {
@@ -213,6 +245,7 @@ export function useContentPlan() {
           days,
           tone,
           serpInsights: freshSerpInsights || undefined,
+          contentIntelligence: intelligenceData || undefined,
           orgGoals: orgGoals || undefined,
           orgVision: orgVision || undefined,
         },
@@ -306,6 +339,7 @@ export function useContentPlan() {
     saving,
     savedPlanId,
     serpInsights,
+    contentIntelligence,
     orgGoals,
     orgVision,
     setOrgGoals,

@@ -195,6 +195,7 @@ serve(async (req) => {
     const tone     = typeof body.tone === "string" ? body.tone.trim().slice(0, 50) : "professional";
     const orgGoals = typeof body.orgGoals === "string" ? body.orgGoals.trim().slice(0, 1000) : "";
     const orgVision = typeof body.orgVision === "string" ? body.orgVision.trim().slice(0, 1000) : "";
+    const contentIntelligence = body.contentIntelligence || null;
 
     if (!niche) return json({ error: "Niche is required" }, 400);
 
@@ -346,11 +347,87 @@ serve(async (req) => {
     }
 
     // ── Step 2: Build the AI prompt with real data ────────────────────────────
+    
+    // Build content intelligence context
+    let intelligenceContext = "";
+    if (contentIntelligence) {
+      console.log("[content-plan] Using content intelligence insights");
+      intelligenceContext = "\n\n=== CONTENT INTELLIGENCE INSIGHTS ===\n";
+      
+      if (contentIntelligence.intent) {
+        const int = contentIntelligence.intent;
+        intelligenceContext += `Search Intent: ${int.primary} (${Math.round((int.confidence || 0) * 100)}% confidence)\n`;
+        intelligenceContext += `- Primary: ${int.primary} | Commercial: ${int.commercial}% | Informational: ${int.informational}%\n`;
+      }
+      
+      if (contentIntelligence.benchmarks) {
+        const bench = contentIntelligence.benchmarks;
+        intelligenceContext += `\nCompetitor Benchmarks:\n`;
+        intelligenceContext += `- Target Word Count: ${bench.targetWordCount} words\n`;
+        intelligenceContext += `- Average H2 Count: ${bench.avgH2Count} sections\n`;
+        intelligenceContext += `- Dominant Content Type: ${bench.dominantContentType}\n`;
+      }
+      
+      if (contentIntelligence.outline?.sections?.length) {
+        intelligenceContext += `\nRecommended Content Structure (${contentIntelligence.outline.sections.length} sections):\n`;
+        contentIntelligence.outline.sections.slice(0, 8).forEach((sec: any) => {
+          intelligenceContext += `  ${sec.priority === 'must-have' ? '🔴' : '🟡'} ${sec.heading} (${sec.estimatedWords} words)\n`;
+          if (sec.subtopics?.length) {
+            intelligenceContext += `    → Cover: ${sec.subtopics.slice(0, 3).join(", ")}\n`;
+          }
+        });
+      }
+      
+      if (contentIntelligence.competitorHeadings?.patterns?.length) {
+        intelligenceContext += `\nCommon Competitor Headings (use these as inspiration):\n`;
+        contentIntelligence.competitorHeadings.patterns.slice(0, 6).forEach((p: any) => {
+          intelligenceContext += `  • "${p.heading}" (${Math.round((p.frequency || 0) * 100)}% of top 10)\n`;
+        });
+      }
+      
+      if (contentIntelligence.faq?.questions?.length) {
+        intelligenceContext += `\nFAQ Questions to Address:\n`;
+        contentIntelligence.faq.questions.slice(0, 8).forEach((q: any) => {
+          intelligenceContext += `  ❓ ${q.question}\n`;
+          if (q.answer) {
+            intelligenceContext += `     → ${q.answer.slice(0, 100)}...\n`;
+          }
+        });
+      }
+      
+      if (contentIntelligence.entities?.required?.length) {
+        intelligenceContext += `\nSemantic Entities to Include:\n`;
+        intelligenceContext += `  Required: ${contentIntelligence.entities.required.slice(0, 8).join(", ")}\n`;
+        if (contentIntelligence.entities.recommended?.length) {
+          intelligenceContext += `  Recommended: ${contentIntelligence.entities.recommended.slice(0, 6).join(", ")}\n`;
+        }
+      }
+      
+      if (contentIntelligence.contentGaps?.missingTopics?.length) {
+        intelligenceContext += `\nContent Gaps (opportunities):\n`;
+        contentIntelligence.contentGaps.missingTopics.slice(0, 4).forEach((gap: string) => {
+          intelligenceContext += `  💡 ${gap}\n`;
+        });
+      }
+      
+      intelligenceContext += "\n";
+    }
+    
     const orgContext = (orgGoals || orgVision)
       ? `\n\n=== ORGANIZATION CONTEXT ===\n${orgGoals ? `Goals: ${orgGoals}\n` : ""}${orgVision ? `Vision: ${orgVision}\n` : ""}`
       : "";
 
     const systemPrompt = `You are an expert SEO content strategist.
+
+${intelligenceContext
+  ? `You have been given CONTENT INTELLIGENCE INSIGHTS with AI-powered recommendations:
+- Use the recommended content structure as the foundation for your plan
+- Incorporate FAQ questions as blog post angles or subsections
+- Target the semantic entities to ensure topical coverage
+- Address the content gaps identified
+- Follow the benchmarks for word count and heading structure
+- Match the dominant content type from competitors`
+  : ""}
 
 ${serpContext
   ? `You have been given REAL live Google SERP data below. You MUST:
@@ -384,6 +461,7 @@ Primary keywords: ${keywords.join(", ")}
 ${longTailKeywords.length ? `Existing long-tail keywords: ${longTailKeywords.slice(0, 15).join(", ")}` : ""}
 Tone: ${tone}
 ${orgContext}
+${intelligenceContext}
 ${serpContext}`;
 
     // ── Step 3: Generate plan with GPT ────────────────────────────────────────
@@ -447,14 +525,21 @@ ${serpContext}`;
       return { ...item, long_tail_keyword: ltk };
     });
 
-    console.log(`[content-plan] ✅ Generated ${plan.length} items. ${serpDataSummary ? `SERP: ${serpDataSummary}` : "No SERP data used."}`);
+    console.log(`[content-plan] ✅ Generated ${plan.length} items. ${serpDataSummary ? `SERP: ${serpDataSummary}` : "No SERP data used."} ${contentIntelligence ? "With content intelligence." : ""}`);
 
     return json({
       plan,
       meta: {
         serpResearched: !!SERP_API_KEY && keywords.length > 0,
+        contentIntelligenceUsed: !!contentIntelligence,
         itemCount:      plan.length,
-        dataSource:     body.serpBriefs?.length ? "serp_briefs + openai" : SERP_API_KEY ? "live_serp + openai" : "openai_only",
+        dataSource:     contentIntelligence 
+          ? "content_intelligence + openai" 
+          : body.serpBriefs?.length 
+            ? "serp_briefs + openai" 
+            : SERP_API_KEY 
+              ? "live_serp + openai" 
+              : "openai_only",
         serpSummary:    serpDataSummary || null,
       },
     });
