@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { DEMO_CONTENT_PLAN } from "@/lib/demo-data";
 import type { ContentItem } from "./types";
 
 export function useContentPlan() {
@@ -28,8 +27,6 @@ export function useContentPlan() {
 
   // Debounced auto-save ref
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Allow access without login - demo mode available
 
   useEffect(() => {
     // Try to load from session storage first (for non-logged-in users)
@@ -291,23 +288,6 @@ export function useContentPlan() {
     [plan, debouncedAutoSave]
   );
 
-  const loadDemoData = useCallback(() => {
-    setPlan(DEMO_CONTENT_PLAN);
-    setNiche("Content Marketing");
-    setKeywords(["content marketing strategy", "SEO best practices", "email marketing"]);
-    toast({
-      title: "Sample data loaded (not real)",
-      description: "This is example data only. Click 'Generate Plan' for real AI + SerpAPI content.",
-    });
-  }, [toast]);
-
-  // Detect if current plan is unmodified demo data (same titles as DEMO_CONTENT_PLAN)
-  const isDemoPlan = plan.length > 0 &&
-    DEMO_CONTENT_PLAN.length > 0 &&
-    plan.some((item) =>
-      DEMO_CONTENT_PLAN.some((demo) => demo.title === item.title)
-    );
-
   return {
     user,
     signOut,
@@ -321,7 +301,6 @@ export function useContentPlan() {
     tone,
     setTone,
     plan,
-    isDemoPlan,
     generating,
     generationProgress,
     saving,
@@ -335,7 +314,6 @@ export function useContentPlan() {
     savePlan,
     updateItem,
     removeItem,
-    loadDemoData,
     navigate,
   };
 }

@@ -177,28 +177,6 @@ const Analytics = () => {
 
   const fetchAnalytics = async () => {
     if (!user) {
-      // ── Demo data ──────────────────────────────────────────────────────────
-      setStats({
-        total: 24, published: 12, drafts: 8, scheduled: 3, review: 1,
-        avgWordCount: 1850, avgSeoScore: 72, thisMonthCount: 7,
-      });
-      setActivityData(
-        Array.from({ length: 7 }, (_, i) => ({
-          date:  format(subDays(new Date(), 6 - i), "MMM dd"),
-          posts: Math.floor(Math.random() * 4) + 1,
-        }))
-      );
-      setActivityData30(
-        Array.from({ length: 30 }, (_, i) => ({
-          date:  format(subDays(new Date(), 29 - i), "MMM dd"),
-          posts: Math.floor(Math.random() * 4),
-        }))
-      );
-      setRecentPosts([
-        { title: "SEO Best Practices Guide",        status: "published", created_at: new Date().toISOString(), wordCount: 2200, seoScore: 81 },
-        { title: "Content Marketing Strategy 2026", status: "draft",     created_at: new Date().toISOString(), wordCount: 1400, seoScore: 64 },
-        { title: "Social Media Trends 2026",        status: "scheduled", created_at: new Date().toISOString(), wordCount: 1850, seoScore: 73 },
-      ]);
       setLoading(false);
       return;
     }

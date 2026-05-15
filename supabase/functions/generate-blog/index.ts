@@ -200,6 +200,9 @@ serve(async (req) => {
     const topic    = typeof body.topic    === "string" ? body.topic.trim().slice(0, 1000)   : "";
     const keywords = typeof body.keywords === "string" ? body.keywords.trim().slice(0, 500) : "";
     const tone     = typeof body.tone     === "string" ? body.tone.trim().slice(0, 50)      : "professional";
+    const targetWordCount = typeof body.targetWordCount === "number" && body.targetWordCount >= 500 && body.targetWordCount <= 5000
+      ? body.targetWordCount
+      : 1500; // default to 1500 words
     const template = body.template ?? null;
 
     if (!topic) return jsonResponse({ error: "Topic is required" }, 400);
@@ -253,19 +256,21 @@ serve(async (req) => {
     const systemPrompt = `You are an expert SEO content writer with deep knowledge of Google's E-E-A-T principles (Experience, Expertise, Authoritativeness, Trust). You write comprehensive, data-driven blog posts that outrank competitors.
 
 QUALITY STANDARDS:
-- Minimum 2,000 words (aim for 2,500–3,500 for competitive keywords)
+- Target ${targetWordCount} words (±10% is acceptable)
 - Use proper markdown: H2 (##) and H3 (###) headings, bullet lists, bold key terms
 - Include a FAQ section at the end with 3–5 questions (helps win People Also Ask SERP features)
 - Natural keyword integration (1.5–2% density) — never keyword-stuffed
 - Factual, specific, and actionable — no vague filler content
 - Strong intro (hook the reader in the first 2 sentences) and clear conclusion with CTA
+- Add real examples, case studies, statistics, and actionable tips throughout
+- Use numbered lists, bullet points, and tables for better readability
 
 Respond in VALID JSON ONLY. No markdown fences outside the JSON.
 JSON format:
 {
   "title": "SEO-optimized title (50–70 chars)",
   "excerpt": "Compelling 1–2 sentence summary for meta description (120–160 chars)",
-  "content": "Full markdown content (2,000+ words)",
+  "content": "Full markdown content (${targetWordCount} words target)",
   "keywords": ["keyword1", "keyword2", ...],
   "wordCount": <integer>,
   "competitorUrlsAnalyzed": <integer>
@@ -276,10 +281,11 @@ JSON format:
 TOPIC: ${topic}
 ${keywords ? `TARGET KEYWORDS: ${keywords}` : ""}
 TONE: ${tone}
+TARGET LENGTH: ${targetWordCount} words
 ${competitorSection}
 ${templateSection}
 
-IMPORTANT: The content field must be a complete, polished article of 2,000+ words. Include a FAQ section at the end.`;
+IMPORTANT: The content field must be a complete, polished article of ${targetWordCount} words (±10%). Include a FAQ section at the end.`;
 
     console.log("[generate-blog] Calling OpenAI for generation...");
     const rawGeneration = await callOpenAI(
@@ -306,24 +312,27 @@ IMPORTANT: The content field must be a complete, polished article of 2,000+ word
 
     // ── PHASE 3: Word Count Enforcement ──────────────────────────────────────
     const actualWordCount = countWords(post.content || "");
-    console.log(`[generate-blog] Generated word count: ${actualWordCount}`);
+    console.log(`[generate-blog] Generated word count: ${actualWordCount} (target: ${targetWordCount})`);
 
-    if (actualWordCount < 1500) {
-      console.log("[generate-blog] Content too short — running expansion pass...");
-      const expansionPrompt = `The following blog post is only ${actualWordCount} words, which is below the 1,500-word minimum for competitive SEO.
+    const minWordCount = Math.max(500, targetWordCount * 0.85); // Allow 15% under target
+    
+    if (actualWordCount < minWordCount) {
+      console.log(`[generate-blog] Content too short (${actualWordCount} < ${minWordCount}) — running expansion pass...`);
+      const expansionPrompt = `The following blog post is only ${actualWordCount} words, which is below the ${targetWordCount}-word target.
 
-EXPAND this post to at least 2,000 words by:
+EXPAND this post to ${targetWordCount} words by:
 1. Adding more depth to each existing section (more examples, data, explanation)
 2. Adding 2–3 additional H2 sections that complement the existing ones
 3. Expanding the FAQ section with 2 more questions if it exists
 4. Adding a proper introduction paragraph if it's too thin
 5. Adding a conclusion with actionable next steps
+6. Include real-world examples, statistics, case studies, and best practices
 
 Current post:
 ${JSON.stringify(post)}
 
 Return ONLY valid JSON in the exact same format: { title, excerpt, content, keywords, wordCount, competitorUrlsAnalyzed }
-The content must be at least 2,000 words.`;
+The content must be at least ${targetWordCount} words.`;
 
       const expandedRaw = await callOpenAI(
         OPENAI_API_KEY,

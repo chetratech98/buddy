@@ -42,7 +42,6 @@ const ContentPlan = () => {
     tone,
     setTone,
     plan,
-    isDemoPlan,
     generating,
     generationProgress,
     saving,
@@ -56,7 +55,6 @@ const ContentPlan = () => {
     savePlan,
     updateItem,
     removeItem,
-    loadDemoData,
     navigate,
   } = useContentPlan();
 
@@ -175,13 +173,6 @@ const ContentPlan = () => {
                   </>
                 )}
               </button>
-              <button
-                onClick={loadDemoData}
-                disabled={generating}
-                className="bg-accent text-accent-foreground font-semibold px-6 py-2.5 rounded-xl transition-all duration-300 hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
-              >
-                <FileText size={16} /> Load Demo Data
-              </button>
               {showControls && (
                 <button
                   onClick={() => setShowControls(false)}
@@ -191,26 +182,6 @@ const ContentPlan = () => {
                 </button>
               )}
             </div>
-          </div>
-        )}
-
-        {/* Demo data warning banner */}
-        {isDemoPlan && !generating && (
-          <div className="mb-4 flex items-start gap-3 p-4 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-yellow-700 dark:text-yellow-400">
-            <AlertTriangle size={18} className="shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <p className="font-semibold text-sm">You are viewing sample demo data — not real results</p>
-              <p className="text-xs mt-0.5 opacity-80">
-                Click <strong>"Generate Plan"</strong> above to create a real 30-day content plan using live Google search data and your niche.
-              </p>
-            </div>
-            <button
-              onClick={generate}
-              disabled={generating}
-              className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-lg bg-yellow-500/20 hover:bg-yellow-500/30 transition-colors"
-            >
-              Generate Now →
-            </button>
           </div>
         )}
 

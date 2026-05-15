@@ -13,6 +13,7 @@ import { PageShell } from "@/components/PageShell";
 import { ContentEditor } from "@/components/cms/ContentEditor";
 import { PublishPanel, PostStatus } from "@/components/cms/PublishPanel";
 import { TemplateSelector } from "@/components/TemplateSelector";
+import { ContentQualityMetrics } from "@/components/ContentQualityMetrics";
 import { ContentTemplate } from "@/lib/templates";
 import {
   scoreContent,
@@ -170,6 +171,7 @@ const CreatePost = () => {
   const [topic, setTopic] = useState("");
   const [keywords, setKeywords] = useState("");
   const [tone, setTone] = useState("professional");
+  const [targetWordCount, setTargetWordCount] = useState(1500);
   const [selectedTemplate, setSelectedTemplate] = useState<ContentTemplate | null>(null);
   const [generating, setGenerating] = useState(false);
   const [step, setStep] = useState<"prompt" | "edit">("prompt");
@@ -291,9 +293,10 @@ const CreatePost = () => {
         topic: string;
         keywords: string;
         tone: string;
+        targetWordCount?: number;
         template?: { name: string; structure: string[]; promptTemplate: string };
       };
-      const generationBody: GenerationBody = { topic, keywords, tone };
+      const generationBody: GenerationBody = { topic, keywords, tone, targetWordCount };
       if (selectedTemplate) {
         generationBody.template = {
           name:           selectedTemplate.name,
@@ -486,6 +489,33 @@ const CreatePost = () => {
               </div>
             </div>
 
+            {/* Target Word Count */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Target Word Count: <span className="text-primary font-semibold">{targetWordCount}</span> words
+              </label>
+              <input
+                type="range"
+                min="500"
+                max="3000"
+                step="500"
+                value={targetWordCount}
+                onChange={(e) => setTargetWordCount(Number(e.target.value))}
+                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-primary"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                <span>500 (Short)</span>
+                <span>1500 (Medium)</span>
+                <span>3000 (Long)</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                {targetWordCount <= 800 && "Quick reads, social posts"}
+                {targetWordCount > 800 && targetWordCount <= 1500 && "Standard blog posts"}
+                {targetWordCount > 1500 && targetWordCount <= 2500 && "In-depth guides, SEO-optimized"}
+                {targetWordCount > 2500 && "Comprehensive tutorials, pillar content"}
+              </p>
+            </div>
+
             <button onClick={handleGenerate} disabled={generating} className="w-full btn-primary">
               {generating ? (
                 <><Loader2 size={18} className="animate-spin" /> Generating your blog post…</>
@@ -657,6 +687,16 @@ const CreatePost = () => {
 
           {/* ── Sidebar ── */}
           <div className="lg:sticky lg:top-24 lg:self-start space-y-4">
+            {/* Content Quality Metrics */}
+            {content && (
+              <ContentQualityMetrics
+                wordCount={content.split(/\s+/).filter(w => w.length > 0).length}
+                targetWordCount={targetWordCount}
+                hasFAQ={content.toLowerCase().includes('faq') || content.toLowerCase().includes('frequently asked')}
+                keywords={postKeywords}
+              />
+            )}
+            
             {/* Live SEO score */}
             {seoScore && <SeoScorePanel score={seoScore} />}
 

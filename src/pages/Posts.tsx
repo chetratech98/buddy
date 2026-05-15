@@ -57,8 +57,6 @@ const Posts = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<BlogPost | null>(null);
 
-  // Allow access without login - demo mode available
-
   useEffect(() => {
     if (user) fetchPosts();
   }, [user]);

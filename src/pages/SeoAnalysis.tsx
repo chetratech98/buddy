@@ -41,7 +41,7 @@ import {
 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { exportToCSV, exportCompetitorsToCSV, exportRecommendationsToCSV } from "@/lib/seo-analysis-export";
-import { DEMO_SEO_ANALYSIS } from "@/lib/demo-data";
+import { exportToPDF } from "@/lib/seo-analysis-pdf-export";
 
 import {
   BarChart,
@@ -312,16 +312,11 @@ const SeoAnalysis = () => {
     } catch (err: any) {
       console.error("Analysis error:", err);
       
-      // Fallback to demo data on error
       toast({ 
-        title: "Using Demo Data", 
-        description: "Backend not available. Showing demo results. Deploy your Supabase project for real analysis.",
-        variant: "default"
+        title: "Analysis Failed", 
+        description: "Unable to analyze. Please check your Supabase configuration and ensure edge functions are deployed.",
+        variant: "destructive"
       });
-      setResult(DEMO_SEO_ANALYSIS);
-      if (DEMO_SEO_ANALYSIS?.keywords?.length) {
-        setSelectedKeyword(DEMO_SEO_ANALYSIS.keywords[0].keyword);
-      }
     } finally {
       setAnalyzing(false);
       setAnalysisProgress({ current: 0, total: 0, status: "" });
@@ -1091,6 +1086,10 @@ const SeoAnalysis = () => {
 
             <div className="flex justify-end mt-8">
               <div className="flex gap-3">
+                <Button onClick={() => exportToPDF(result, niche)} variant="default" size="lg" className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700">
+                  <Download className="mr-2" size={18} />
+                  Export as PDF
+                </Button>
                 <Button onClick={() => exportToCSV(result, niche)} variant="outline" size="lg">
                   <Download className="mr-2" size={18} />
                   Export Keywords

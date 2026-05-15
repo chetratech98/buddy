@@ -55,9 +55,8 @@ const TodaysBlog = () => {
   const [previewMode, setPreviewMode] = useState(false);
   const [alreadyPostedToday, setAlreadyPostedToday] = useState(false);
   const [tone, setTone] = useState("professional");
+  const [targetWordCount, setTargetWordCount] = useState(1500);
   const [showExportMenu, setShowExportMenu] = useState(false);
-
-  // Allow access without login - demo mode available
 
   useEffect(() => {
     if (!user) return;
@@ -132,6 +131,7 @@ const TodaysBlog = () => {
           topic: todayItem.title,
           keywords: [todayItem.keyword, todayItem.long_tail_keyword].filter(Boolean).join(", "),
           tone,
+          targetWordCount,
         },
       });
       if (error) throw error;
@@ -298,6 +298,35 @@ const TodaysBlog = () => {
           {todayItem.description && (
             <p className="text-muted-foreground text-sm">{todayItem.description}</p>
           )}
+          
+          {/* Target Word Count Selector */}
+          <div>
+            <label className="block text-sm font-medium mb-2">
+              Target Word Count: <span className="text-primary font-semibold">{targetWordCount}</span> words
+            </label>
+            <input
+              type="range"
+              min="500"
+              max="3000"
+              step="500"
+              value={targetWordCount}
+              onChange={(e) => setTargetWordCount(Number(e.target.value))}
+              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-primary"
+              aria-label="Target word count"
+            />
+            <div className="flex justify-between text-xs text-muted-foreground mt-1">
+              <span>500 (Short)</span>
+              <span>1500 (Medium)</span>
+              <span>3000 (Long)</span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              {targetWordCount <= 800 && "Quick reads, social posts"}
+              {targetWordCount > 800 && targetWordCount <= 1500 && "Standard blog posts"}
+              {targetWordCount > 1500 && targetWordCount <= 2500 && "In-depth guides, SEO-optimized"}
+              {targetWordCount > 2500 && "Comprehensive tutorials, pillar content"}
+            </p>
+          </div>
+          
           <button onClick={generateBlog} disabled={generating} className="w-full btn-primary">
             {generating ? (
               <><Loader2 size={18} className="animate-spin" /> Generating Blog Post...</>
