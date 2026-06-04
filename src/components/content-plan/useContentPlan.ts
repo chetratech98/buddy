@@ -378,33 +378,19 @@ export function useContentPlan() {
     [plan, debouncedAutoSave]
   );
 
-  return {
-    user,
-    signOut,
-    authLoading,
-    profileLoading,
-    niche,
-    setNiche,
-    keywords,
-    setKeywords,
-    longTailKeywords,
-    tone,
-    setTone,
-    plan,
-    generating,
-    generationProgress,
-    saving,
-    savedPlanId,
-    serpInsights,
-    contentIntelligence,
-    orgGoals,
-    orgVision,
-    setOrgGoals,
-    setOrgVision,
-    generate,
-    savePlan,
-    updateItem,
-    removeItem,
-    navigate,
-  };
-}
+  const generateBrief = useCallback(
+    async (idx: number) => {
+      const item = plan[idx];
+      if (!item) return;
+
+      // Mark as generating
+      const withFlag = plan.map((p, i) =>
+        i === idx ? { ...p, brief_generating: true } : p
+      );
+      setPlan(withFlag);
+
+      try {
+        const { data, error } = await supabase.functions.invoke("generate-writing-brief", {
+          body: {
+            title: item.title,
+  

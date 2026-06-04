@@ -55,6 +55,7 @@ const ContentPlan = () => {
     savePlan,
     updateItem,
     removeItem,
+    generateBrief,
     navigate,
   } = useContentPlan();
 
@@ -237,6 +238,7 @@ const ContentPlan = () => {
                   index={idx}
                   onUpdate={updateItem}
                   onRemove={removeItem}
+                  onGenerateBrief={generateBrief}
                 />
               ))}
             </div>
@@ -251,10 +253,4 @@ const ContentPlan = () => {
               </p>
             </div>
           )
-        )}
-      </main>
-    </div>
-  );
-};
-
-export default ContentPlan;
+    
