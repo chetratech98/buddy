@@ -25,7 +25,6 @@ import { InputSources } from "@/components/content-plan/InputSources";
 import { PlanItem } from "@/components/content-plan/PlanItem";
 import { GenerationProgress } from "@/components/content-plan/GenerationProgress";
 
-
 import { useState } from "react";
 
 const ContentPlan = () => {
@@ -61,7 +60,6 @@ const ContentPlan = () => {
 
   const [showControls, setShowControls] = useState(false);
 
-  // Memoize type distribution for summary
   const typeDistribution = useMemo(() => {
     const counts: Record<string, number> = {};
     plan.forEach((item) => {
@@ -97,7 +95,6 @@ const ContentPlan = () => {
           </button>
         </nav>
 
-
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
             <Calendar size={28} className="text-primary" aria-hidden="true" />
@@ -119,11 +116,8 @@ const ContentPlan = () => {
           )}
         </div>
 
-
-        {/* Generation Progress */}
         <GenerationProgress progress={generationProgress} visible={generating} />
 
-        {/* Input Sources & Controls */}
         {(plan.length === 0 || showControls) && (
           <div id="plan-controls" className="space-y-4 mb-8">
             <InputSources
@@ -136,7 +130,6 @@ const ContentPlan = () => {
               onGoalsUpdated={(g, v) => { setOrgGoals(g); setOrgVision(v); }}
               onNicheUpdated={(n, kws) => { setNiche(n); setKeywords(kws); }}
             />
-            {/* Tone + Generate */}
             <div className="flex flex-wrap gap-4 items-end">
               <div>
                 <label htmlFor="tone-select" className="block text-sm font-medium mb-1">
@@ -186,7 +179,6 @@ const ContentPlan = () => {
           </div>
         )}
 
-        {/* Plan List */}
         {plan.length > 0 ? (
           <section aria-label="Content plan items">
             <div className="flex items-center justify-between mb-4">
@@ -253,4 +245,10 @@ const ContentPlan = () => {
               </p>
             </div>
           )
-    
+        )}
+      </main>
+    </div>
+  );
+};
+
+export default ContentPlan;
