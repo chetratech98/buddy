@@ -1,6 +1,19 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+async function decryptPassword(encryptedBase64: string, keyStr: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const keyBytes = encoder.encode(keyStr.padEnd(32, "0").slice(0, 32));
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw", keyBytes, { name: "AES-GCM" }, false, ["decrypt"]
+  );
+  const combined = Uint8Array.from(atob(encryptedBase64), c => c.charCodeAt(0));
+  const iv = combined.slice(0, 12);
+  const data = combined.slice(12);
+  const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, cryptoKey, data);
+  return new TextDecoder().decode(decrypted);
+}
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -62,7 +75,7 @@ serve(async (req) => {
     // Get user's WordPress credentials
     const { data: profile, error: profileError } = await supabaseClient
       .from("profiles")
-      .select("wp_url, wp_username, wp_app_password")
+      .select("wp_url, wp_username, wp_app_password_enc, wp_app_password")
       .eq("user_id", user.id)
       .single();
 
@@ -70,10 +83,26 @@ serve(async (req) => {
       throw new Error("Profile not found");
     }
 
-    const { wp_url, wp_username, wp_app_password } = profile;
+    const { wp_url, wp_username } = profile;
 
-    if (!wp_url || !wp_username || !wp_app_password) {
+    // Resolve password: prefer encrypted, fall back to legacy plaintext
+    let wp_app_password: string;
+    if (profile.wp_app_password_enc) {
+      const encryptionKey = Deno.env.get("WP_ENCRYPTION_KEY");
+      if (!encryptionKey) throw new Error("WP_ENCRYPTION_KEY not configured on the server");
+      try {
+        wp_app_password = await decryptPassword(profile.wp_app_password_enc, encryptionKey);
+      } catch {
+        throw new Error("Failed to decrypt WordPress credentials. Please re-save your WordPress settings.");
+      }
+    } else if (profile.wp_app_password) {
+      wp_app_password = profile.wp_app_password;
+    } else {
       throw new Error("WordPress credentials not configured. Please add your WordPress site URL, username, and application password in your profile settings.");
+    }
+
+    if (!wp_url || !wp_username) {
+      throw new Error("WordPress URL or username not configured. Please update your profile settings.");
     }
 
     // Prepare WordPress post data

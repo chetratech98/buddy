@@ -195,6 +195,29 @@ serve(async (req) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) return jsonResponse({ error: "Unauthorized" }, 401);
 
+    // ── Quota check ───────────────────────────────────────────────────────────
+    const { data: quotaProfile, error: quotaError } = await supabase
+      .from("profiles")
+      .select("subscription_tier, posts_used_this_month, posts_quota_monthly")
+      .eq("user_id", user.id)
+      .single();
+
+    if (!quotaError && quotaProfile) {
+      const tier = quotaProfile.subscription_tier || "free";
+      if (tier !== "enterprise") {
+        const used = quotaProfile.posts_used_this_month ?? 0;
+        const quota = quotaProfile.posts_quota_monthly ?? 5;
+        if (used >= quota) {
+          return jsonResponse({
+            error: "quota_exceeded",
+            message: "You've reached your monthly post limit. Upgrade your plan to continue creating content.",
+          }, 200);
+        }
+      }
+      // Increment usage counter before generation (prevents races)
+      await supabase.rpc("check_and_increment_quota", { p_user_id: user.id });
+    }
+
     // ── Input validation ──────────────────────────────────────────────────────
     const body = await req.json();
     const topic    = typeof body.topic    === "string" ? body.topic.trim().slice(0, 1000)   : "";

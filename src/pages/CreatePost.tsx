@@ -352,6 +352,15 @@ const CreatePost = () => {
         body: generationBody,
       });
       if (error) throw error;
+      if (data?.error === "quota_exceeded") {
+        toast({
+          title: "Monthly limit reached",
+          description: "You've used all your blog posts for this month. Upgrade your plan to continue.",
+          variant: "destructive",
+        });
+        setGenerating(false);
+        return;
+      }
       if (data.error) throw new Error(data.error);
 
       setTitle(data.title || "");
