@@ -77,16 +77,20 @@ const Auth = () => {
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [emailSent, setEmailSent] = useState<{ title: string; description: string } | null>(null);
 
-  const { user, signIn, signUp, signInWithGoogle, signInWithMagicLink } = useAuth();
+  const { user, signIn, signUp, signInWithGoogle, signInWithMagicLink, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
 
   const from = (location.state as any)?.from ?? "/dashboard";
 
+  // If already logged in, show a "continue" option instead of hard-redirecting
+  // so the user can also choose to sign out and use a different account
+  const [showAlreadyLoggedIn, setShowAlreadyLoggedIn] = useState(false);
+
   useEffect(() => {
-    if (user) navigate(from, { replace: true });
-  }, [user, navigate, from]);
+    if (user) setShowAlreadyLoggedIn(true);
+  }, [user]);
 
   const switchMode = (next: Mode) => {
     setMode(next);
@@ -156,6 +160,50 @@ const Auth = () => {
       setGoogleLoading(false);
     }
   };
+
+  // ── Already logged in screen ───────────────────────────────────────────────
+  if (showAlreadyLoggedIn && user) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center px-4">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="w-full max-w-md text-center"
+        >
+          <div className="flex items-center justify-center gap-2.5 mb-8">
+            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-sm">
+              <Sparkles size={20} className="text-primary-foreground" />
+            </div>
+            <span className="text-2xl font-bold tracking-tight">BlitzNova AI</span>
+          </div>
+          <div className="card-elevated p-8">
+            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
+              <User size={22} className="text-primary" />
+            </div>
+            <h2 className="text-xl font-bold mb-1">You're signed in</h2>
+            <p className="text-sm text-muted-foreground mb-6">{user.email}</p>
+            <div className="space-y-3">
+              <button
+                onClick={() => navigate(from, { replace: true })}
+                className="w-full btn-primary"
+              >
+                Continue to Dashboard
+              </button>
+              <button
+                onClick={async () => {
+                  await signOut();
+                  setShowAlreadyLoggedIn(false);
+                }}
+                className="w-full py-2.5 text-sm text-muted-foreground hover:text-foreground border border-border rounded-xl transition-colors"
+              >
+                Sign out and use a different account
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
 
   // ── Email sent confirmation screen ─────────────────────────────────────────
   if (emailSent) {

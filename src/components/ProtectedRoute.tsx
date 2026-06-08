@@ -24,12 +24,6 @@ const ProtectedRoute = ({ children, requireAdmin = false }: Props) => {
     return <Navigate to="/auth" state={{ from: location.pathname }} replace />;
   }
 
-  // Enforce email verification for email/password users
-  // OAuth providers (Google) auto-verify so email_confirmed_at is set immediately
-  if (!user.email_confirmed_at && user.app_metadata?.provider === "email") {
-    return <Navigate to="/verify-email" replace />;
-  }
-
   if (requireAdmin && profile?.role !== "admin") {
     return <Navigate to="/dashboard" replace />;
   }
