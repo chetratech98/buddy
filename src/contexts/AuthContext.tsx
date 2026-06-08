@@ -41,7 +41,7 @@ interface AuthContextType {
   refreshOrgs: () => Promise<void>;
   leaveOrg: (orgId: string) => Promise<void>;
   // Auth
-  signUp: (email: string, password: string, displayName?: string) => Promise<{ error: Error | null }>;
+  signUp: (email: string, password: string, displayName?: string) => Promise<{ error: Error | null; needsConfirmation: boolean }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signInWithGoogle: () => Promise<{ error: Error | null }>;
   signInWithMagicLink: (email: string) => Promise<{ error: Error | null }>;
@@ -208,15 +208,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // ── Auth methods ────────────────────────────────────────────────────────────
 
   const signUp = async (email: string, password: string, displayName?: string) => {
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { display_name: displayName },
+        data: displayName ? { display_name: displayName } : {},
         emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
     });
-    return { error: error as Error | null };
+    // needsConfirmation=true  → email confirmation required, show "check your email"
+    // needsConfirmation=false → email confirmation disabled, session returned, auto-login
+    const needsConfirmation = !error && !data.session;
+    return { error: error as Error | null, needsConfirmation };
   };
 
   const signIn = async (email: string, password: string) => {

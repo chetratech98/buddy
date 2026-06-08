@@ -5,18 +5,33 @@ import { Sparkles, Eye, EyeOff, Mail, Lock, User, AlertCircle, Zap } from "lucid
 import { useToast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
 
-function friendlyAuthError(msg: string): string {
+function friendlySignInError(msg: string): string {
   const m = msg.toLowerCase();
   if (m.includes("invalid login credentials") || m.includes("invalid_credentials"))
     return "Incorrect email or password. Please check your credentials and try again.";
   if (m.includes("email not confirmed"))
     return "Your email isn't confirmed yet. Check your inbox for a confirmation link.";
-  if (m.includes("user already registered"))
-    return "An account with this email already exists. Sign in instead.";
   if (m.includes("unable to validate email address"))
     return "Please enter a valid email address.";
-  if (m.includes("password should be at least"))
-    return "Password must be at least 6 characters.";
+  if (m.includes("rate limit") || m.includes("too many"))
+    return "Too many attempts. Please wait a moment and try again.";
+  return msg;
+}
+
+function friendlySignUpError(msg: string): string {
+  const m = msg.toLowerCase();
+  // Supabase returns invalid_credentials when signing up with an existing email
+  // (when email confirmation is disabled it tries to sign them in silently)
+  if (m.includes("invalid login credentials") || m.includes("invalid_credentials") || m.includes("user already registered"))
+    return "An account with this email already exists. Switch to Sign In and use your password.";
+  if (m.includes("unable to validate email address") || m.includes("invalid email"))
+    return "Please enter a valid email address.";
+  if (m.includes("password should be at least") || m.includes("weak_password") || m.includes("password is too"))
+    return "Password is too weak. Try at least 8 characters with a mix of letters and numbers.";
+  if (m.includes("signup") && (m.includes("disabled") || m.includes("not allowed")))
+    return "New sign-ups are currently disabled. Please contact support.";
+  if (m.includes("rate limit") || m.includes("too many"))
+    return "Too many attempts. Please wait a moment and try again.";
   return msg;
 }
 
@@ -114,21 +129,22 @@ const Auth = () => {
     if (mode === "signin") {
       const { error } = await signIn(email, password);
       if (error) {
-        const msg = friendlyAuthError(error.message);
-        setInlineError(msg);
+        setInlineError(friendlySignInError(error.message));
       }
+      // on success: onAuthStateChange fires → showAlreadyLoggedIn → redirect
     } else {
-      const { error } = await signUp(email, password, displayName.trim() || undefined);
+      const { error, needsConfirmation } = await signUp(email, password, displayName.trim() || undefined);
       if (error) {
-        const msg = friendlyAuthError(error.message);
-        setInlineError(msg);
-        toast({ title: "Sign up failed", description: msg, variant: "destructive" });
-      } else {
+        setInlineError(friendlySignUpError(error.message));
+      } else if (needsConfirmation) {
+        // Email confirmation is ON — user must click the email link before signing in
         setEmailSent({
           title: "Check your email",
           description: "We sent a confirmation link to",
         });
       }
+      // else: email confirmation is OFF — session returned automatically,
+      // onAuthStateChange fires and showAlreadyLoggedIn handles the redirect
     }
     setLoading(false);
   };
@@ -140,8 +156,7 @@ const Auth = () => {
     setLoading(true);
     const { error } = await signInWithMagicLink(email);
     if (error) {
-      const msg = friendlyAuthError(error.message);
-      setInlineError(msg);
+      setInlineError(friendlySignInError(error.message));
     } else {
       setEmailSent({
         title: "Magic link sent!",
