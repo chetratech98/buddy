@@ -5,17 +5,11 @@ import { Sparkles, ArrowLeft, LogOut } from "lucide-react";
 
 interface PageShellProps {
   children: ReactNode;
-  /** Extra buttons/actions for the header right side */
   headerActions?: ReactNode;
-  /** Back button destination, defaults to "/" */
   backTo?: string;
-  /** Back button label */
   backLabel?: string;
-  /** Use wide content container (max-w-4xl vs max-w-3xl) */
   wide?: boolean;
-  /** Show sign out button in header */
   showSignOut?: boolean;
-  /** Hide back button */
   hideBack?: boolean;
 }
 
@@ -34,42 +28,51 @@ export const PageShell = ({
   return (
     <div className="page-container">
       {/* Header */}
-      <div className="page-header">
-        <div className="page-header-inner">
-          <a href="/" className="flex items-center gap-2.5 group">
-            <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shadow-sm transition-transform group-hover:scale-105">
-              <Sparkles size={18} className="text-primary-foreground" />
+      <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-xl border-b border-border"
+        style={{ boxShadow: "0 1px 0 0 hsl(var(--border))" }}>
+        <div className="max-w-7xl mx-auto px-5 sm:px-6 h-14 flex items-center justify-between">
+          {/* Logo */}
+          <a href="/" className="flex items-center gap-2 group">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-200 group-hover:scale-105"
+              style={{ background: "var(--gradient-primary)" }}>
+              <Sparkles size={13} className="text-white" />
             </div>
-            <span className="text-xl font-bold tracking-tight">BlitzNova AI</span>
+            <span className="text-[15px] font-extrabold tracking-tight text-foreground">
+              BlitzNova <span style={{ color: "hsl(var(--primary))" }}>AI</span>
+            </span>
           </a>
-          <div className="flex items-center gap-3">
+
+          {/* Right */}
+          <div className="flex items-center gap-2">
             {headerActions}
             {showSignOut && (
               <button
                 onClick={async () => { await signOut(); navigate("/"); }}
-                className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-lg hover:bg-secondary/80"
               >
-                <LogOut size={16} /> Sign Out
+                <LogOut size={14} />
+                <span>Sign Out</span>
               </button>
             )}
           </div>
         </div>
-      </div>
+      </header>
 
       {/* Content */}
-      <div className={wide ? "page-content-wide" : "page-content"}>
+      <main className={wide ? "page-content-wide" : "page-content"}>
         {!hideBack && (
           <button
             onClick={() => navigate(backTo)}
             className="back-button"
           >
-            <ArrowLeft size={16} /> {backLabel}
+            <ArrowLeft size={14} />
+            <span>{backLabel}</span>
           </button>
         )}
         <div className="page-enter">
           {children}
         </div>
-      </div>
+      </main>
     </div>
   );
 };

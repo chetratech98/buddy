@@ -6,7 +6,7 @@ const steps = [
   {
     icon: Link2,
     title: "Connect Your Website",
-    description: "Enter your URL and goals. Buddy analyzes your niche, competitors, and top-performing keywords in under 60 seconds.",
+    description: "Enter your URL and goals. Buddy analyzes your niche, competitors, and top keywords in under 60 seconds.",
   },
   {
     icon: ScanSearch,
@@ -16,7 +16,7 @@ const steps = [
   {
     icon: FileCheck,
     title: "Content Generated Daily",
-    description: "Every morning, fresh SEO-optimized blog posts land in your dashboard — complete with headings, citations, and meta tags.",
+    description: "Every morning, fresh SEO-optimized posts land in your dashboard — complete with headings, citations, and meta tags.",
   },
   {
     icon: Leaf,
@@ -32,80 +32,160 @@ const steps = [
 
 const HowItWorks = () => {
   const ref = useRef(null);
-  const inView = useInView(ref, { once: true, margin: "-100px" });
+  const inView = useInView(ref, { once: true, margin: "-80px" });
 
   return (
-    <section id="how-it-works" ref={ref} className="py-28 px-4 bg-background">
-      <div className="max-w-6xl mx-auto">
+    <section id="how-it-works" ref={ref} className="py-20 md:py-28 px-5 sm:px-6 bg-white">
+      <div className="max-w-7xl mx-auto">
+
+        {/* Header */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 14 }}
           animate={inView ? { opacity: 1, y: 0 } : {}}
-          className="text-center mb-20"
+          transition={{ duration: 0.5 }}
+          className="max-w-xl mb-14 md:mb-16"
         >
-          <span className="section-label">PROCESS</span>
-          <h2 className="text-3xl md:text-5xl font-bold mt-4">How It Works</h2>
-          <p className="mt-4 text-muted-foreground text-lg">
-            Four simple steps to automated content creation
+          <span className="section-label">Process</span>
+          <h2 className="text-3xl md:text-4xl font-extrabold tracking-tight text-foreground leading-tight">
+            From setup to{" "}
+            <span style={{ color: "hsl(var(--primary))" }}>ranking</span>{" "}
+            in five steps
+          </h2>
+          <p className="mt-4 text-base sm:text-lg text-muted-foreground leading-relaxed">
+            Connect your site once. Get SEO-optimized content every morning, forever.
           </p>
         </motion.div>
 
-        {/* Steps with connecting line */}
-        <div className="relative">
-          <div className="hidden md:block absolute top-16 left-[8%] right-[8%] h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent" />
+        {/* Desktop: horizontal row */}
+        <div className="hidden md:grid md:grid-cols-5 gap-0 relative">
+          {/* Connector line */}
+          <div
+            className="absolute top-[1.75rem] left-[9%] right-[9%] h-px pointer-events-none"
+            style={{ background: "hsl(var(--border))" }}
+          />
 
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-10 md:gap-4">
-            {steps.map((step, i) => (
+          {steps.map((step, i) => {
+            const Icon = step.icon;
+            return (
               <motion.div
                 key={step.title}
-                initial={{ opacity: 0, y: 30 }}
+                initial={{ opacity: 0, y: 20 }}
                 animate={inView ? { opacity: 1, y: 0 } : {}}
-                transition={{ delay: 0.2 + i * 0.12, duration: 0.5 }}
-                className="flex flex-col items-center text-center"
+                transition={{ delay: 0.1 + i * 0.1, duration: 0.5 }}
+                className="flex flex-col items-center text-center px-3 relative"
               >
-                <div className="w-20 h-20 rounded-2xl bg-primary/8 border border-primary/15 flex items-center justify-center mb-5 relative z-10 transition-colors hover:bg-primary/12">
-                  <step.icon size={30} className="text-primary" strokeWidth={1.5} />
+                {/* Step circle */}
+                <div
+                  className="relative z-10 w-14 h-14 rounded-2xl flex items-center justify-center mb-5"
+                  style={{
+                    background: i === 0 ? "hsl(var(--primary))" : "hsl(var(--card))",
+                    border: `1.5px solid ${i === 0 ? "hsl(var(--primary))" : "hsl(var(--border))"}`,
+                    boxShadow: "var(--shadow-sm)",
+                  }}
+                >
+                  <Icon
+                    size={22}
+                    style={{ color: i === 0 ? "#fff" : "hsl(var(--primary))" }}
+                    strokeWidth={1.6}
+                  />
                 </div>
 
-                <span className="text-xs font-bold text-primary/60 mb-2 tracking-wider">
-                  STEP {String(i + 1).padStart(2, "0")}
+                <span
+                  className="text-[10px] font-extrabold uppercase tracking-widest mb-2"
+                  style={{ color: "hsl(var(--primary) / 0.5)" }}
+                >
+                  {String(i + 1).padStart(2, "0")}
                 </span>
-                <h3 className="text-lg font-bold mb-3">{step.title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed max-w-[260px]">
+                <h3 className="text-[14px] font-bold text-foreground mb-2 leading-snug">
+                  {step.title}
+                </h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
                   {step.description}
                 </p>
               </motion.div>
-            ))}
-          </div>
+            );
+          })}
         </div>
 
-        {/* Example Generated Post Card */}
+        {/* Mobile: vertical list */}
+        <div className="md:hidden space-y-0 relative">
+          {/* Vertical line */}
+          <div
+            className="absolute left-[1.625rem] top-0 bottom-0 w-px"
+            style={{ background: "hsl(var(--border))" }}
+          />
+
+          {steps.map((step, i) => {
+            const Icon = step.icon;
+            return (
+              <motion.div
+                key={step.title}
+                initial={{ opacity: 0, x: -14 }}
+                animate={inView ? { opacity: 1, x: 0 } : {}}
+                transition={{ delay: 0.08 + i * 0.09, duration: 0.45 }}
+                className="flex gap-5 pb-8 last:pb-0 relative"
+              >
+                {/* Icon */}
+                <div
+                  className="w-[3.25rem] h-[3.25rem] rounded-xl flex items-center justify-center flex-shrink-0 relative z-10"
+                  style={{
+                    background: "hsl(var(--primary))",
+                    boxShadow: "var(--shadow-sm)",
+                  }}
+                >
+                  <Icon size={18} color="#fff" strokeWidth={1.6} />
+                </div>
+
+                <div className="flex-1 pt-1.5">
+                  <span
+                    className="text-[10px] font-extrabold uppercase tracking-widest block mb-1"
+                    style={{ color: "hsl(var(--primary) / 0.5)" }}
+                  >
+                    Step {String(i + 1).padStart(2, "0")}
+                  </span>
+                  <h3 className="text-[15px] font-bold text-foreground mb-1.5">
+                    {step.title}
+                  </h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    {step.description}
+                  </p>
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+
+        {/* Example post preview */}
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
+          initial={{ opacity: 0, y: 20 }}
           animate={inView ? { opacity: 1, y: 0 } : {}}
-          transition={{ delay: 0.8, duration: 0.5 }}
-          className="mt-20 max-w-3xl mx-auto card-elevated p-6"
+          transition={{ delay: 0.7, duration: 0.5 }}
+          className="mt-14 max-w-xl mx-auto rounded-xl border border-border bg-white overflow-hidden"
+          style={{ boxShadow: "var(--shadow-md)" }}
         >
-          <div className="flex items-center gap-2 mb-4">
-            <div className="w-3 h-3 rounded-full bg-destructive/50" />
-            <div className="w-3 h-3 rounded-full bg-[hsl(var(--warning))]/50" />
-            <div className="w-3 h-3 rounded-full bg-[hsl(var(--success))]/50" />
-            <span className="ml-2 text-sm text-muted-foreground">Example Generated Post</span>
+          {/* Chrome bar */}
+          <div className="px-4 py-3 border-b border-border bg-gray-50 flex items-center gap-2">
+            <div className="flex gap-1.5">
+              <div className="w-2.5 h-2.5 rounded-full bg-gray-300" />
+              <div className="w-2.5 h-2.5 rounded-full bg-gray-300" />
+              <div className="w-2.5 h-2.5 rounded-full bg-gray-300" />
+            </div>
+            <span className="ml-1 text-xs text-muted-foreground font-medium">Sample Generated Post</span>
           </div>
 
-          <h3 className="text-xl font-bold mb-3">
-            10 Best SEO Practices for Small Businesses in 2026
-          </h3>
-
-          <div className="flex flex-wrap gap-3">
-            <span className="text-xs font-medium px-3 py-1.5 rounded-full border border-primary/20 text-primary bg-primary/5">
-              SEO Score: 96/100
-            </span>
-            <span className="text-xs font-medium px-3 py-1.5 rounded-full border border-[hsl(var(--success))]/20 text-[hsl(var(--success))] bg-[hsl(var(--success))]/5">
-              Readability: Excellent
-            </span>
-            <span className="text-xs font-medium px-3 py-1.5 rounded-full border border-[hsl(var(--chart-4))]/20 text-[hsl(var(--chart-4))] bg-[hsl(var(--chart-4))]/5">
-              10 References
-            </span>
+          <div className="p-5 sm:p-6">
+            <h3 className="text-base font-bold text-foreground mb-3">
+              10 Best SEO Practices for Small Businesses in 2026
+            </h3>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { label: "SEO Score: 96/100", color: "success" },
+                { label: "Readability: Excellent", color: "primary" },
+                { label: "10 References", color: "warning" },
+              ].map(b => (
+                <span key={b.label} className={`badge badge-${b.color} text-xs`}>{b.label}</span>
+              ))}
+            </div>
           </div>
         </motion.div>
       </div>
