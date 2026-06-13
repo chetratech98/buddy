@@ -445,22 +445,45 @@ Generate a JSON array of exactly ${days} items. Each item MUST have:
 - "type": one of "blog" | "listicle" | "how-to" | "case-study" | "opinion"
 - "keyword": the primary keyword to target
 - "long_tail_keyword": a unique 3-6 word long-tail phrase (different for every item)
-- "description": 2 sentences: what the post covers AND the unique angle/value over competitors
+- "description": FOUR sentences — (1) the specific problem or question this post solves, (2) the unique content angle that beats what is currently ranking, (3) who the target reader is and what stage they are at, (4) what the reader will be able to DO or KNOW after reading
 
-RULES:
+CONTENT PHASE RULES:
+- Days 1-7 (FOUNDATION): Definitions, "what is" explainers, beginner concepts. Use titles like "What is...", "Beginner's Guide to...", "X Things Every [audience] Should Know"
+- Days 8-14 (HOW-TO): Step-by-step tutorials, implementation guides, workflows. Use titles like "How to...", "Step-by-Step Guide to...", "X Ways to Implement..."
+- Days 15-21 (INTERMEDIATE): Comparisons, common mistakes, best tools, trade-offs. Use titles like "X vs Y", "X Mistakes to Avoid", "Best Tools for...", "Ultimate Checklist for..."
+- Days 22-27 (ADVANCED): Deep dives, expert strategies, industry analysis. Use titles like "Advanced...", "Expert Guide to...", "X Trends Shaping..."
+- Days 28-30 (AUTHORITY): Thought leadership, bold opinions, case studies. Use titles like "Why...", "The Truth About...", "How [Real Business] Achieved..."
+
+OUTPUT RULES:
 - Every title must be unique
 - Every long_tail_keyword must be unique across the entire plan
 - Distribute content types: roughly 30% how-to, 30% listicle, 20% blog, 10% case-study, 10% opinion
-- Order: foundational content first (days 1-10), then intermediate (days 11-20), then advanced/opinion (days 21-30)
 - Return ONLY a valid JSON array — no markdown fences, no explanations`;
 
-    const userPrompt = `Create a ${days}-day content plan.
+    const userPrompt = `Create a ${days}-day content plan for the following niche and keywords. Follow the content phase progression strictly.
 
-Niche: ${niche}
-Primary keywords: ${keywords.join(", ")}
-${longTailKeywords.length ? `Existing long-tail keywords: ${longTailKeywords.slice(0, 15).join(", ")}` : ""}
-Tone: ${tone}
+NICHE: ${niche}
+PRIMARY KEYWORDS: ${keywords.join(", ")}
+${longTailKeywords.length ? `SUPPORTING LONG-TAIL KEYWORDS (weave these into descriptions and as long_tail_keyword targets): ${longTailKeywords.slice(0, 15).join(", ")}` : ""}
+TONE: ${tone}
 ${orgContext}
+
+GENERATION INSTRUCTIONS FOR EACH DAY:
+- For each day's "title": craft a specific, click-worthy title that targets a real search query. Avoid generic titles — make them concrete and benefit-driven.
+- For each day's "long_tail_keyword": pick a 3-6 word phrase that a real user would type into Google, closely tied to that day's topic. Never repeat a phrase used on another day.
+- For each day's "description" (FOUR sentences required):
+  Sentence 1 — PROBLEM: State the specific question, pain point, or gap this post addresses.
+  Sentence 2 — ANGLE: Explain what makes this post's approach different from what competitors are publishing — the unique hook, fresh data, or overlooked perspective.
+  Sentence 3 — AUDIENCE: Identify who this post is written for (beginner/intermediate/expert), their goal, and what they already know.
+  Sentence 4 — OUTCOME: State exactly what the reader will be able to do, decide, or understand by the end of the post.
+- For each day's "type": match the content format to the topic — use "how-to" for tutorials, "listicle" for collections of tips/tools/ideas, "case-study" for real-world examples, "opinion" for controversial or thought-leadership topics, "blog" for narrative or explainer content.
+
+PHASE PROGRESSION:
+Days 1-7: Cover foundational concepts — help beginners understand the basics of ${niche}.
+Days 8-14: Move to actionable how-to guides — teach readers how to implement or use key strategies.
+Days 15-21: Address intermediate challenges — comparisons, common mistakes, tool roundups, decision guides.
+Days 22-27: Publish advanced and expert-level content — deep dives, trend analysis, optimization strategies.
+Days 28-30: Establish authority — strong opinion pieces, case studies with real outcomes, industry predictions.
 ${intelligenceContext}
 ${serpContext}`;
 

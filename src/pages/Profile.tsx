@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Camera, Save, Loader2, Target, Eye, ExternalLink,
-  Check, AlertCircle, Globe,
+  Check, AlertCircle, Globe, LogOut,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { PageShell } from "@/components/PageShell";
@@ -171,7 +172,8 @@ function MediumSettings({ userId }: { userId: string }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const Profile = () => {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, signOut } = useAuth();
+  const navigate = useNavigate();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -346,10 +348,17 @@ const Profile = () => {
         </div>
       </div>
 
-      <div className="mt-8">
+      <div className="mt-8 space-y-3">
         <button onClick={handleSave} disabled={saving} className="w-full btn-primary">
           {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
           {saving ? "Saving…" : "Save Profile & Personalization"}
+        </button>
+        <button
+          onClick={async () => { await signOut(); navigate("/"); }}
+          className="w-full btn-outline flex items-center justify-center gap-2 text-destructive border-destructive/30 hover:bg-destructive/5"
+        >
+          <LogOut size={16} />
+          Sign Out
         </button>
       </div>
 

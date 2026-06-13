@@ -128,7 +128,21 @@ const GetStarted = () => {
     setResult(updatedResult);
   }, [user, editNiche, editKeywords, toast, result]);
   useEffect(() => {
-    // Load from database for authenticated users only
+    // First: try sessionStorage for the full enriched result (from the current session)
+    const cached = sessionStorage.getItem("siteAnalysis");
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (parsed.website_url) setUrl(parsed.website_url);
+        if (parsed.niche || parsed.keywords?.length) {
+          setResult(parsed);
+          setSaved(true);
+          return; // rich data found — skip DB load
+        }
+      } catch {}
+    }
+
+    // Fallback: load minimal data from DB for authenticated users
     if (user) {
       supabase
         .from("profiles")
@@ -138,7 +152,6 @@ const GetStarted = () => {
         .then(({ data }) => {
           if (data?.website_url) {
             setUrl(data.website_url);
-            // Show minimal cached result
             setResult({
               niche: data.niche || "",
               description: "",
@@ -178,14 +191,14 @@ const GetStarted = () => {
 
         // Save to database (authentication required)
         if (user) {
-          const allKeywords = [...(data.data.flatKeywords || []), ...(data.data.flatLongTail || [])];
           const { error: updateErr } = await supabase
             .from("profiles")
             .update({
               website_url: trimmed,
               niche: data.data.niche,
-              keywords: allKeywords,
-            })
+              // Save primary keywords only — long-tail stays separate for content plan quality
+              keywords: data.data.flatKeywords || [],
+            } as any)
             .eq("user_id", user.id);
 
           if (updateErr) {

@@ -225,8 +225,11 @@ serve(async (req) => {
     const tone     = typeof body.tone     === "string" ? body.tone.trim().slice(0, 50)      : "professional";
     const targetWordCount = typeof body.targetWordCount === "number" && body.targetWordCount >= 500 && body.targetWordCount <= 5000
       ? body.targetWordCount
-      : 1500; // default to 1500 words
-    const template = body.template ?? null;
+      : 1500;
+    const template          = body.template ?? null;
+    const contentType       = typeof body.contentType === "string" ? body.contentType.trim() : "blog";
+    const contentPlanBrief  = typeof body.contentPlanBrief === "string" ? body.contentPlanBrief.trim().slice(0, 1000) : "";
+    const niche             = typeof body.niche === "string" ? body.niche.trim().slice(0, 200) : "";
 
     if (!topic) return jsonResponse({ error: "Topic is required" }, 400);
 
@@ -364,22 +367,39 @@ JSON format:
   "competitorUrlsAnalyzed": <integer>
 }`;
 
+    // Build content-type format instructions
+    const contentTypeGuide: Record<string, string> = {
+      "how-to": "Structure as a step-by-step guide. Use numbered steps (##Step 1, ##Step 2…) as the backbone. Each step must have a clear action, explanation of WHY, and a concrete example. Open with a short 'What you'll achieve' section. Close with a 'Common Mistakes' or 'Pro Tips' section.",
+      "listicle": "Structure as a ranked or curated list (e.g., '12 Ways to…' or 'Top 10…'). Each list item gets its own H2 with a bold key insight in the first sentence. Use short paragraphs per item — no walls of text. Include a comparison summary table if 5+ items.",
+      "case-study": "Open with the problem context and stakes. Walk through the solution with specific decisions, timelines, and metrics. Include a 'Results' section with quantifiable outcomes. Close with 'Key Takeaways' and 'How to Apply This' sections.",
+      "opinion": "Take a clear, defensible position in the opening paragraph. Build the argument with evidence, counterarguments, and rebuttals. Use first-person voice. End with a call to action that invites the reader to act on the perspective.",
+      "blog": "Use a narrative/educational structure: hook → problem statement → body (H2 sections with H3 subsections) → FAQ → conclusion with CTA.",
+    };
+    const formatGuide = contentTypeGuide[contentType] || contentTypeGuide["blog"];
+
     const userPrompt = `Write a comprehensive, SEO-optimized blog post on this topic:
 
 TOPIC: ${topic}
+${niche ? `SITE NICHE: ${niche}` : ""}
 ${keywords ? `TARGET KEYWORDS: ${keywords}` : ""}
 TONE: ${intelligenceTone}
+CONTENT FORMAT: ${contentType.toUpperCase()}
 TARGET LENGTH: ${intelligenceWordCount} words
+${contentPlanBrief ? `\nCONTENT PLAN BRIEF (use this to shape the angle, audience, and outcome):\n${contentPlanBrief}\n` : ""}
+FORMAT INSTRUCTIONS FOR ${contentType.toUpperCase()}:
+${formatGuide}
 ${intelligenceSection}
 ${competitorSection}
 ${templateSection}
 
 CRITICAL REQUIREMENTS:
-1. Follow the outline structure EXACTLY if provided in Content Intelligence
-2. Answer all FAQ questions if provided
-3. Include all semantic entities naturally
-4. The content field must be a complete, polished article of ${intelligenceWordCount} words (±10%)
-5. ${contentIntelligence ? 'Address all content gaps mentioned to differentiate from competitors' : 'Provide unique insights'}`;
+1. Follow the FORMAT INSTRUCTIONS above to structure the article correctly for its type (${contentType})
+2. Use the CONTENT PLAN BRIEF to nail the specific angle — do NOT write a generic overview
+3. Follow the outline structure EXACTLY if provided in Content Intelligence
+4. Answer all FAQ questions if provided
+5. Include all semantic entities naturally
+6. The content field must be a complete, polished article of ${intelligenceWordCount} words (±10%)
+7. ${contentIntelligence ? 'Address all content gaps mentioned to differentiate from competitors' : 'Provide unique insights not found in the top 10 Google results'}`;
 
     console.log("[generate-blog] Calling OpenAI for generation with content intelligence...");
     const rawGeneration = await callOpenAI(
@@ -456,7 +476,8 @@ FIX ANY OF THESE ISSUES (if present):
 5. Tone must be consistently "${tone}"
 6. No incomplete sentences, no placeholder text like [INSERT X HERE]
 7. FAQ section must exist (3+ questions)
-8. Verify "wordCount" field reflects actual content word count
+8. Content type is "${contentType}" — verify the structure matches: how-to uses numbered steps, listicle has individual H2s per item, case-study has Results section, opinion takes a clear stance
+9. Verify "wordCount" field reflects actual content word count
 
 Current post:
 ${JSON.stringify(post)}

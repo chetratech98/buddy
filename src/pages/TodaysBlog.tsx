@@ -57,6 +57,7 @@ const TodaysBlog = () => {
   const [tone, setTone] = useState("professional");
   const [targetWordCount, setTargetWordCount] = useState(1500);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [niche, setNiche] = useState("");
 
   useEffect(() => {
     if (!user) return;
@@ -87,7 +88,7 @@ const TodaysBlog = () => {
           .lte("created_at", todayEnd.toISOString()),
         supabase
           .from("profiles")
-          .select("niche, keywords")
+          .select("niche, keywords, org_goals, org_vision")
           .eq("user_id", user!.id)
           .maybeSingle(),
       ]);
@@ -101,6 +102,8 @@ const TodaysBlog = () => {
         setContent(post.content);
         setKeywords(post.keywords || []);
       }
+
+      if (profileRes.data?.niche) setNiche(profileRes.data.niche);
 
       if (planRes.data) {
         const plan = planRes.data;
@@ -132,6 +135,9 @@ const TodaysBlog = () => {
           keywords: [todayItem.keyword, todayItem.long_tail_keyword].filter(Boolean).join(", "),
           tone,
           targetWordCount,
+          contentType: todayItem.type,
+          contentPlanBrief: todayItem.description || "",
+          niche,
         },
       });
       if (error) throw error;
@@ -284,29 +290,53 @@ const TodaysBlog = () => {
       {/* Today's topic card */}
       {todayItem && !existingPost && (
         <div className="card-elevated p-8 space-y-6">
-          <div>
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1 font-semibold">Today's Topic</p>
-            <h2 className="text-2xl font-bold">{todayItem.title}</h2>
+          {/* Header */}
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2 font-semibold">Today's Topic</p>
+              <h2 className="text-2xl font-bold leading-snug">{todayItem.title}</h2>
+            </div>
+            <span className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full border capitalize"
+              style={{
+                background: "hsl(var(--primary)/0.08)",
+                color: "hsl(var(--primary))",
+                borderColor: "hsl(var(--primary)/0.2)",
+              }}>
+              {todayItem.type}
+            </span>
           </div>
-          <div className="flex flex-wrap gap-4 text-sm">
-            <div>
-              <span className="text-muted-foreground">Type:</span>{" "}
-              <span className="font-medium capitalize">{todayItem.type}</span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Keyword:</span>{" "}
-              <span className="font-medium">{todayItem.keyword}</span>
-            </div>
+
+          {/* Keywords */}
+          <div className="flex flex-wrap gap-2">
+            <span className="text-xs px-2.5 py-1 rounded-md bg-muted text-muted-foreground font-medium">
+              🎯 {todayItem.keyword}
+            </span>
             {todayItem.long_tail_keyword && (
-              <div>
-                <span className="text-muted-foreground">Long-tail:</span>{" "}
-                <span className="font-medium">{todayItem.long_tail_keyword}</span>
-              </div>
+              <span className="text-xs px-2.5 py-1 rounded-md bg-muted text-muted-foreground font-medium">
+                🔍 {todayItem.long_tail_keyword}
+              </span>
             )}
           </div>
-          {todayItem.description && (
-            <p className="text-muted-foreground text-sm">{todayItem.description}</p>
-          )}
+
+          {/* Plan brief — shown as structured breakdown if it has 4 sentences */}
+          {todayItem.description && (() => {
+            const sentences = todayItem.description.split(/(?<=[.!?])\s+/).filter(Boolean);
+            const labels = ["Problem", "Angle", "Audience", "Outcome"];
+            return sentences.length >= 4 ? (
+              <div className="rounded-xl border border-border bg-muted/30 divide-y divide-border">
+                {sentences.slice(0, 4).map((s, i) => (
+                  <div key={i} className="flex gap-3 px-4 py-3">
+                    <span className="text-xs font-bold text-primary uppercase tracking-wider w-16 shrink-0 pt-0.5">
+                      {labels[i]}
+                    </span>
+                    <p className="text-sm text-foreground leading-relaxed">{s}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-muted-foreground text-sm leading-relaxed">{todayItem.description}</p>
+            );
+          })()}
           
           {/* Target Word Count Selector */}
           <div>
