@@ -5,15 +5,15 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 
 const navLinks = [
-  { label: "Features",     href: "#features",     isRoute: false, authOnly: false },
-  { label: "How It Works", href: "#how-it-works",  isRoute: false, authOnly: false },
-  { label: "Pricing",      href: "#pricing",       isRoute: false, authOnly: false },
-  { label: "Dashboard",    href: "/dashboard",     isRoute: true,  authOnly: true  },
-  { label: "Billing",      href: "/billing",       isRoute: true,  authOnly: true  },
-  { label: "Analyze Site", href: "/get-started",   isRoute: true,  authOnly: true  },
-  { label: "SERP Analysis",href: "/seo-analysis",  isRoute: true,  authOnly: true  },
-  { label: "Content Plan", href: "/content-plan",  isRoute: true,  authOnly: true  },
-  { label: "Today's Blog", href: "/todays-blog",   isRoute: true,  authOnly: true  },
+  { label: "Features",     href: "#features",     isRoute: false, authOnly: false, guestOnly: true  },
+  { label: "How It Works", href: "#how-it-works",  isRoute: false, authOnly: false, guestOnly: true  },
+  { label: "Pricing",      href: "#pricing",       isRoute: false, authOnly: false, guestOnly: true  },
+  { label: "Dashboard",    href: "/dashboard",     isRoute: true,  authOnly: true,  guestOnly: false },
+  { label: "Billing",      href: "/billing",       isRoute: true,  authOnly: true,  guestOnly: false },
+  { label: "Analyze Site", href: "/get-started",   isRoute: true,  authOnly: true,  guestOnly: false },
+  { label: "SERP Analysis",href: "/seo-analysis",  isRoute: true,  authOnly: true,  guestOnly: false },
+  { label: "Content Plan", href: "/content-plan",  isRoute: true,  authOnly: true,  guestOnly: false },
+  { label: "Today's Blog", href: "/todays-blog",   isRoute: true,  authOnly: true,  guestOnly: false },
 ];
 
 /* ── Org Switcher ── */
@@ -134,7 +134,7 @@ const Navbar = () => {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  const filteredLinks = navLinks.filter(l => !l.authOnly || user);
+  const filteredLinks = navLinks.filter(l => (!l.authOnly || user) && (!l.guestOnly || !user));
 
   return (
     <>
