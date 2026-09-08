@@ -34,20 +34,20 @@ serve(async (req) => {
 
     const { planId, billingInterval = "month" } = await req.json();
 
-    if (!["pro", "enterprise"].includes(planId)) {
+    if (!["basic", "standard"].includes(planId)) {
       return jsonResponse({ error: "Invalid plan" }, 400);
     }
 
-    const priceId = planId === "pro"
+    const priceId = planId === "basic"
       ? (billingInterval === "year"
-          ? Deno.env.get("STRIPE_PRO_PRICE_ID_YEARLY")
-          : Deno.env.get("STRIPE_PRO_PRICE_ID_MONTHLY"))
+          ? Deno.env.get("STRIPE_BASIC_PRICE_ID_YEARLY")
+          : Deno.env.get("STRIPE_BASIC_PRICE_ID_MONTHLY"))
       : (billingInterval === "year"
-          ? Deno.env.get("STRIPE_ENTERPRISE_PRICE_ID_YEARLY")
-          : Deno.env.get("STRIPE_ENTERPRISE_PRICE_ID_MONTHLY"));
+          ? Deno.env.get("STRIPE_STANDARD_PRICE_ID_YEARLY")
+          : Deno.env.get("STRIPE_STANDARD_PRICE_ID_MONTHLY"));
 
     if (!priceId) {
-      return jsonResponse({ error: "Price ID not configured for this plan. Add STRIPE_PRO_PRICE_ID_MONTHLY and STRIPE_ENTERPRISE_PRICE_ID_MONTHLY to Supabase secrets." }, 500);
+      return jsonResponse({ error: "Price ID not configured for this plan. Add STRIPE_BASIC_PRICE_ID_MONTHLY and STRIPE_STANDARD_PRICE_ID_MONTHLY to Supabase secrets." }, 500);
     }
 
     const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") ?? "", {

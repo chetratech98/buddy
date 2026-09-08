@@ -10,71 +10,46 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Check, Loader2, CreditCard, TrendingUp, AlertCircle, ExternalLink, CheckCircle2 } from 'lucide-react';
 
-interface PlanFeature {
-  text: string;
-  included: boolean;
-}
-
 interface Plan {
   id: string;
   name: string;
   monthlyPrice: number;
-  yearlyPrice: number;
-  features: PlanFeature[];
+  annualPrice: number;
+  features: string[];
   popular?: boolean;
 }
 
+// Kept in sync with the landing page pricing (src/components/Pricing.tsx)
 const PLANS: Plan[] = [
   {
-    id: 'free',
-    name: 'Free',
-    monthlyPrice: 0,
-    yearlyPrice: 0,
+    id: 'basic',
+    name: 'Basic',
+    monthlyPrice: 1499,
+    annualPrice: 14999,
     features: [
-      { text: '5 blog posts per month', included: true },
-      { text: 'Basic content templates', included: true },
-      { text: 'SEO optimization', included: true },
-      { text: 'Draft & scheduling', included: true },
-      { text: 'WordPress publishing', included: false },
-      { text: 'Email notifications', included: false },
-      { text: 'Priority support', included: false },
-      { text: 'Custom AI training', included: false },
+      '15 blog posts per month',
+      'Monthly business intelligence update',
+      '5 keywords',
     ],
   },
   {
-    id: 'pro',
-    name: 'Pro',
-    monthlyPrice: 29,
-    yearlyPrice: 23,
+    id: 'standard',
+    name: 'Standard',
+    monthlyPrice: 2999,
+    annualPrice: 29999,
     popular: true,
     features: [
-      { text: '50 blog posts per month', included: true },
-      { text: 'All content templates', included: true },
-      { text: 'Advanced SEO optimization', included: true },
-      { text: 'Multi-platform publishing', included: true },
-      { text: 'WordPress auto-publish', included: true },
-      { text: 'Email notifications', included: true },
-      { text: 'Priority email support', included: true },
-      { text: 'Custom AI training', included: false },
-    ],
-  },
-  {
-    id: 'enterprise',
-    name: 'Enterprise',
-    monthlyPrice: 99,
-    yearlyPrice: 79,
-    features: [
-      { text: 'Unlimited blog posts', included: true },
-      { text: 'All premium templates', included: true },
-      { text: 'Advanced SEO & analytics', included: true },
-      { text: 'Multi-platform publishing', included: true },
-      { text: 'WordPress auto-publish', included: true },
-      { text: 'Real-time notifications', included: true },
-      { text: 'Priority phone & chat support', included: true },
-      { text: 'Custom AI model training', included: true },
+      '1 AI blog post per day',
+      'Weekly business intelligence update',
+      '10 keywords',
+      'SERP Analysis',
+      'Detailed Dashboards',
     ],
   },
 ];
+
+const discountPercent = (monthlyPrice: number, annualPrice: number) =>
+  Math.round(((monthlyPrice * 12 - annualPrice) / (monthlyPrice * 12)) * 100);
 
 const Billing = () => {
   const { user } = useAuth();
@@ -154,13 +129,6 @@ const Billing = () => {
       toast({ title: 'Already subscribed', description: 'You are already on this plan.' });
       return;
     }
-    if (planId === 'free') {
-      toast({
-        title: 'To downgrade',
-        description: 'To cancel your subscription, use the "Manage Billing" button to access the customer portal.',
-      });
-      return;
-    }
 
     setProcessingPlan(planId);
     try {
@@ -213,7 +181,7 @@ const Billing = () => {
     );
   }
 
-  const usagePercentage = currentPlan === 'enterprise' ? 0 : Math.min((quotaInfo.used / quotaInfo.total) * 100, 100);
+  const usagePercentage = Math.min((quotaInfo.used / quotaInfo.total) * 100, 100);
   const isPaidPlan = currentPlan !== 'free';
 
   return (
@@ -237,7 +205,9 @@ const Billing = () => {
               className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${billingInterval === 'year' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
               onClick={() => setBillingInterval('year')}
             >
-              Yearly <Badge variant="secondary" className="ml-1 text-xs">Save 20%</Badge>
+              Yearly <Badge variant="secondary" className="ml-1 text-xs">
+                Save up to {Math.max(...PLANS.map(p => discountPercent(p.monthlyPrice, p.annualPrice)))}%
+              </Badge>
             </button>
           </div>
         </div>
@@ -291,21 +261,19 @@ const Billing = () => {
                 <div className="flex justify-between text-sm">
                   <span>Posts this month</span>
                   <span className="font-medium">
-                    {quotaInfo.used} / {currentPlan === 'enterprise' ? '∞' : quotaInfo.total}
+                    {quotaInfo.used} / {quotaInfo.total}
                   </span>
                 </div>
-                {currentPlan !== 'enterprise' && (
-                  <div className="w-full bg-muted rounded-full h-2">
-                    <div
-                      className={`h-2 rounded-full transition-all ${
-                        usagePercentage >= 90 ? 'bg-destructive' :
-                        usagePercentage >= 70 ? 'bg-yellow-500' : 'bg-primary'
-                      }`}
-                      style={{ width: `${usagePercentage}%` }}
-                    />
-                  </div>
-                )}
-                {usagePercentage >= 80 && currentPlan !== 'enterprise' && (
+                <div className="w-full bg-muted rounded-full h-2">
+                  <div
+                    className={`h-2 rounded-full transition-all ${
+                      usagePercentage >= 90 ? 'bg-destructive' :
+                      usagePercentage >= 70 ? 'bg-yellow-500' : 'bg-primary'
+                    }`}
+                    style={{ width: `${usagePercentage}%` }}
+                  />
+                </div>
+                {usagePercentage >= 80 && (
                   <Alert variant="destructive" className="mt-4">
                     <AlertCircle className="h-4 w-4" />
                     <AlertDescription>
@@ -320,11 +288,12 @@ const Billing = () => {
         )}
 
         {/* Plan cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-2xl mx-auto">
           {PLANS.map((plan) => {
             const isCurrentPlan = currentPlan === plan.id;
             const isProcessing = processingPlan === plan.id;
-            const price = billingInterval === 'year' ? plan.yearlyPrice : plan.monthlyPrice;
+            const price = billingInterval === 'year' ? plan.annualPrice : plan.monthlyPrice;
+            const discount = discountPercent(plan.monthlyPrice, plan.annualPrice);
 
             return (
               <Card
@@ -347,13 +316,11 @@ const Billing = () => {
                 <CardHeader className="text-center pb-4">
                   <CardTitle className="text-2xl">{plan.name}</CardTitle>
                   <div className="mt-4">
-                    <span className="text-4xl font-bold">${price}</span>
-                    <span className="text-muted-foreground">
-                      {plan.id === 'free' ? '/forever' : `/${billingInterval}`}
-                    </span>
-                    {billingInterval === 'year' && plan.id !== 'free' && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Billed annually (${plan.yearlyPrice * 12}/yr)
+                    <span className="text-4xl font-bold">₹{price.toLocaleString('en-IN')}</span>
+                    <span className="text-muted-foreground">/{billingInterval === 'year' ? 'yr' : 'mo'}</span>
+                    {billingInterval === 'year' && (
+                      <p className="text-xs font-semibold mt-1" style={{ color: 'hsl(142 71% 35%)' }}>
+                        Save {discount}% vs monthly
                       </p>
                     )}
                   </div>
@@ -361,15 +328,10 @@ const Billing = () => {
 
                 <CardContent className="space-y-6">
                   <ul className="space-y-3">
-                    {plan.features.map((feature, idx) => (
-                      <li key={idx} className="flex items-start gap-2 text-sm">
-                        <Check
-                          size={18}
-                          className={`flex-shrink-0 mt-0.5 ${feature.included ? 'text-primary' : 'text-muted-foreground opacity-30'}`}
-                        />
-                        <span className={!feature.included ? 'text-muted-foreground line-through' : ''}>
-                          {feature.text}
-                        </span>
+                    {plan.features.map((feature) => (
+                      <li key={feature} className="flex items-start gap-2 text-sm">
+                        <Check size={18} className="flex-shrink-0 mt-0.5 text-primary" />
+                        <span>{feature}</span>
                       </li>
                     ))}
                   </ul>
@@ -377,15 +339,13 @@ const Billing = () => {
                   <Button
                     className="w-full"
                     variant={plan.popular ? 'default' : 'outline'}
-                    disabled={isCurrentPlan || isProcessing || !user || plan.id === 'free'}
+                    disabled={isCurrentPlan || isProcessing || !user}
                     onClick={() => handleUpgrade(plan.id)}
                   >
                     {isProcessing ? (
                       <><Loader2 className="animate-spin mr-2" size={16} />Redirecting to checkout...</>
                     ) : isCurrentPlan ? (
                       'Current Plan'
-                    ) : plan.id === 'free' ? (
-                      'Free Plan'
                     ) : !user ? (
                       'Sign In to Subscribe'
                     ) : (

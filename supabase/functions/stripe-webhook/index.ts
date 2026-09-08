@@ -3,21 +3,21 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@14";
 
 const PLAN_DETAILS: Record<string, { tier: string; quota: number }> = {
-  pro: { tier: "pro", quota: 50 },
-  enterprise: { tier: "enterprise", quota: 999999 },
+  basic: { tier: "basic", quota: 15 },
+  standard: { tier: "standard", quota: 30 },
   free: { tier: "free", quota: 5 },
 };
 
 function getPlanDetails(plan: string) {
-  return PLAN_DETAILS[plan] ?? PLAN_DETAILS.pro;
+  return PLAN_DETAILS[plan] ?? PLAN_DETAILS.standard;
 }
 
 // Determine plan from Stripe price ID
 function planFromPriceId(priceId: string): string {
-  const enterpriseIds = (Deno.env.get("STRIPE_ENTERPRISE_PRICE_ID_MONTHLY") ?? "") + "," +
-    (Deno.env.get("STRIPE_ENTERPRISE_PRICE_ID_YEARLY") ?? "");
-  if (enterpriseIds.includes(priceId)) return "enterprise";
-  return "pro";
+  const basicIds = (Deno.env.get("STRIPE_BASIC_PRICE_ID_MONTHLY") ?? "") + "," +
+    (Deno.env.get("STRIPE_BASIC_PRICE_ID_YEARLY") ?? "");
+  if (basicIds.includes(priceId)) return "basic";
+  return "standard";
 }
 
 serve(async (req) => {
@@ -52,7 +52,7 @@ serve(async (req) => {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
         const userId = session.metadata?.supabase_user_id;
-        const plan = session.metadata?.plan || "pro";
+        const plan = session.metadata?.plan || "standard";
         if (!userId) {
           console.error("[stripe-webhook] checkout.session.completed missing supabase_user_id");
           break;
