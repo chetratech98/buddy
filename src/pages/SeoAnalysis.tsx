@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -218,7 +218,20 @@ const SeoAnalysis = () => {
         console.error('Failed to parse stored analysis:', e);
       }
     }
-    
+
+    // Restore the last SERP analysis result so it stays visible across
+    // navigation/reloads until the user runs a new one.
+    const storedResult = sessionStorage.getItem('serpAnalysis');
+    if (storedResult) {
+      try {
+        const data = JSON.parse(storedResult);
+        setResult(data);
+        if (data?.keywords?.length) setSelectedKeyword(data.keywords[0].keyword);
+      } catch (e) {
+        console.error('Failed to parse stored SERP analysis:', e);
+      }
+    }
+
     // If user is logged in, load from database (overrides session storage)
     if (user) {
       supabase
@@ -231,8 +244,9 @@ const SeoAnalysis = () => {
           if (data?.keywords?.length) setKeywords(data.keywords);
           setProfileLoading(false);
         });
-      
-      // Load analysis history
+
+      // Load analysis history, and show the most recent one by default
+      // so a past result stays displayed until a new analysis is run.
       supabase
         .from("serp_analyses" as any)
         .select("*")
@@ -241,6 +255,11 @@ const SeoAnalysis = () => {
         .limit(10)
         .then(({ data }) => {
           if (data) setAnalysisHistory(data);
+          const latest = data?.[0] as any;
+          if (latest?.analysis && !storedResult) {
+            setResult(latest.analysis);
+            if (latest.analysis?.keywords?.length) setSelectedKeyword(latest.analysis.keywords[0].keyword);
+          }
         });
     } else {
       setProfileLoading(false);
@@ -322,15 +341,16 @@ const SeoAnalysis = () => {
 
   const selectedData = result?.keywords.find((k) => k.keyword === selectedKeyword);
 
-  // Chart data
-  const keywordScoreData = result?.keywords.map((kw) => ({
+  // Chart data — memoized so switching the selected keyword doesn't
+  // recompute derived data for every keyword's chart on every render.
+  const keywordScoreData = useMemo(() => result?.keywords.map((kw) => ({
     name: kw.keyword.length > 14 ? kw.keyword.slice(0, 14) + "…" : kw.keyword,
     difficulty: kw.difficultyScore || ({ low: 30, medium: 60, high: 90 }[kw.difficulty] || 50),
     mentions: kw.mentionCount,
     targetWords: kw.targetWordCount || kw.contentBenchmark?.avgWordCount || 0,
-  }));
+  })), [result]);
 
-  const intentDistribution = (() => {
+  const intentDistribution = useMemo(() => {
     if (!result) return [];
     const counts: Record<string, number> = {};
     result.keywords.forEach((kw) => {
@@ -338,9 +358,9 @@ const SeoAnalysis = () => {
       counts[intent] = (counts[intent] || 0) + 1;
     });
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
-  })();
+  }, [result]);
 
-  const contentTypePieData = (() => {
+  const contentTypePieData = useMemo(() => {
     if (!result) return [];
     const counts: Record<string, number> = {};
     result.keywords.forEach((kw) =>
@@ -350,23 +370,23 @@ const SeoAnalysis = () => {
       })
     );
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
-  })();
+  }, [result]);
 
-  const serpFeatureData = (() => {
+  const serpFeatureData = useMemo(() => {
     if (!result?.overallInsights?.serpFeatureSummary) return [];
     return Object.entries(result.overallInsights.serpFeatureSummary).map(([key, value]) => ({
       name: serpFeatureLabels[key] || key.replace(/_/g, " "),
       count: value,
     }));
-  })();
+  }, [result]);
 
-  const competitorScoreData = selectedData?.topCompetitors
+  const competitorScoreData = useMemo(() => selectedData?.topCompetitors
     .filter((c) => c.contentScore !== undefined)
     .map((c) => ({
       name: c.source.length > 18 ? c.source.slice(0, 18) + "…" : c.source,
       score: c.contentScore || 0,
       words: Math.round((c.wordCount || 0) / 100),
-    }));
+    })), [selectedData]);
 
   if (authLoading || profileLoading) {
     return (

@@ -187,7 +187,7 @@ serve(async (req) => {
 
     if (!quotaError && quotaProfile) {
       const used = quotaProfile.posts_used_this_month ?? 0;
-      const quota = quotaProfile.posts_quota_monthly ?? 5;
+      const quota = quotaProfile.posts_quota_monthly ?? 15;
       if (used >= quota) {
         return jsonResponse({
           error: "quota_exceeded",
@@ -218,60 +218,72 @@ serve(async (req) => {
 
     if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not configured");
 
-    // ── PHASE 0: Content Intelligence (get SERP insights) ─────────────────────
+    // ── PHASE 0 + PHASE 1: Content Intelligence + Competitor Research ──────────
+    // These two lookups are fully independent (one hits content-intelligence,
+    // the other hits SERP/Firecrawl) — run them concurrently instead of paying
+    // for both round-trips back-to-back.
     const primaryKeyword = keywords
       ? keywords.split(",")[0].trim()
       : topic.slice(0, 100);
-    
-    let contentIntelligence: any = null;
-    try {
-      console.log(`[generate-blog] Fetching content intelligence for: "${primaryKeyword}"`);
-      const intelligenceRes = await supabase.functions.invoke("content-intelligence", {
-        body: {
-          keyword: primaryKeyword,
-          userId,
-          includeOutline: true,
-          includeHeadings: true,
-          includeFAQ: true,
-        },
-      });
-      
-      if (intelligenceRes.data && !intelligenceRes.error) {
-        contentIntelligence = intelligenceRes.data;
-        console.log(`[generate-blog] Content intelligence loaded: ${contentIntelligence.outline?.sections?.length || 0} sections`);
-      } else {
+
+    const fetchContentIntelligence = async (): Promise<any> => {
+      try {
+        console.log(`[generate-blog] Fetching content intelligence for: "${primaryKeyword}"`);
+        const intelligenceRes = await supabase.functions.invoke("content-intelligence", {
+          body: {
+            keyword: primaryKeyword,
+            userId,
+            includeOutline: true,
+            includeHeadings: true,
+            includeFAQ: true,
+          },
+        });
+
+        if (intelligenceRes.data && !intelligenceRes.error) {
+          console.log(`[generate-blog] Content intelligence loaded: ${intelligenceRes.data.outline?.sections?.length || 0} sections`);
+          return intelligenceRes.data;
+        }
         console.log("[generate-blog] No content intelligence available, proceeding with standard generation");
+        return null;
+      } catch (e) {
+        console.log("[generate-blog] Content intelligence fetch failed, proceeding with standard generation:", e);
+        return null;
       }
-    } catch (e) {
-      console.log("[generate-blog] Content intelligence fetch failed, proceeding with standard generation:", e);
-    }
+    };
 
-    // ── PHASE 1: Competitor Research (real live data) ─────────────────────────
+    const fetchCompetitorResearch = async (): Promise<{
+      context: string;
+      urls: Array<{ url: string; title: string; domain: string; snippet: string }>;
+    }> => {
+      if (!SERP_API_KEY) return { context: "", urls: [] };
 
-    let competitorContext = "";
-    let competitorUrls: Array<{ url: string; title: string; domain: string; snippet: string }> = [];
-
-    if (SERP_API_KEY) {
       console.log(`[generate-blog] Fetching SERP results for: "${primaryKeyword}"`);
-      competitorUrls = await fetchCompetitorUrls(primaryKeyword, SERP_API_KEY, 5);
-      console.log(`[generate-blog] Found ${competitorUrls.length} competitor URLs`);
+      const urls = await fetchCompetitorUrls(primaryKeyword, SERP_API_KEY, 5);
+      console.log(`[generate-blog] Found ${urls.length} competitor URLs`);
 
-      if (competitorUrls.length > 0 && FIRECRAWL_KEY) {
+      if (urls.length > 0 && FIRECRAWL_KEY) {
         console.log("[generate-blog] Scraping competitor content with Firecrawl...");
         // Scrape top 3 in parallel (balance speed vs. context size)
         const scrapedContents = await Promise.all(
-          competitorUrls.slice(0, 3).map((c) => scrapeUrl(c.url, FIRECRAWL_KEY))
+          urls.slice(0, 3).map((c) => scrapeUrl(c.url, FIRECRAWL_KEY))
         );
-        competitorContext = buildCompetitorContext(competitorUrls.slice(0, 3), scrapedContents);
-        console.log(
-          `[generate-blog] Competitor context built: ${competitorContext.length} chars`
-        );
-      } else if (competitorUrls.length > 0) {
+        const context = buildCompetitorContext(urls.slice(0, 3), scrapedContents);
+        console.log(`[generate-blog] Competitor context built: ${context.length} chars`);
+        return { context, urls };
+      } else if (urls.length > 0) {
         // No Firecrawl — use SERP snippets only
-        competitorContext = buildCompetitorContext(competitorUrls, []);
         console.log("[generate-blog] Using SERP snippets only (no Firecrawl key)");
+        return { context: buildCompetitorContext(urls, []), urls };
       }
-    }
+      return { context: "", urls };
+    };
+
+    const [contentIntelligence, competitorResearch] = await Promise.all([
+      fetchContentIntelligence(),
+      fetchCompetitorResearch(),
+    ]);
+    const competitorContext = competitorResearch.context;
+    const competitorUrls = competitorResearch.urls;
 
     // ── PHASE 2: Generate blog post (grounded in competitor data + intelligence) ──
     const competitorSection = competitorContext

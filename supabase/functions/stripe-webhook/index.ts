@@ -5,7 +5,7 @@ import Stripe from "https://esm.sh/stripe@14";
 const PLAN_DETAILS: Record<string, { tier: string; quota: number }> = {
   basic: { tier: "basic", quota: 15 },
   standard: { tier: "standard", quota: 30 },
-  free: { tier: "free", quota: 5 },
+  free: { tier: "free", quota: 15 },
 };
 
 function getPlanDetails(plan: string) {
@@ -127,7 +127,7 @@ serve(async (req) => {
           subscription_tier: "free",
           subscription_status: "canceled",
           stripe_subscription_id: null,
-          posts_quota_monthly: 5,
+          posts_quota_monthly: 15,
         }).eq("stripe_customer_id", customerId);
 
         if (error) console.error("[stripe-webhook] Failed to downgrade:", error);

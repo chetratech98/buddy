@@ -99,52 +99,58 @@ const Admin = () => {
     try {
       setLoading(true);
 
-      // Fetch profiles with subscription data — column-scoped to what the admin table actually renders
-      const { data: profilesData, error: profilesError } = await supabase
-        .from("profiles")
-        .select("id, user_id, display_name, role, subscription_tier, subscription_status, posts_used_this_month, posts_quota_monthly, wp_url, created_at")
-        .order("created_at", { ascending: false })
-        .limit(500);
+      // All 5 queries are independent — run them concurrently instead of
+      // paying for 5 sequential round-trips.
+      const [
+        { data: profilesData, error: profilesError },
+        { data: postsData, error: postsError },
+        { data: plansData, error: plansError },
+        { data: serpData, error: serpError },
+        { data: auditData, error: auditError },
+      ] = await Promise.all([
+        // Profiles with subscription data — column-scoped to what the admin table actually renders
+        supabase
+          .from("profiles")
+          .select("id, user_id, display_name, role, subscription_tier, subscription_status, posts_used_this_month, posts_quota_monthly, wp_url, created_at")
+          .order("created_at", { ascending: false })
+          .limit(500),
+        // Blog posts (without join for now to avoid type errors)
+        supabase
+          .from("blog_posts")
+          .select("id, title, status, created_at, user_id")
+          .order("created_at", { ascending: false })
+          .limit(100),
+        // Content plans
+        supabase
+          .from("content_plans")
+          .select("id, niche, keywords, created_at, user_id")
+          .order("created_at", { ascending: false })
+          .limit(100),
+        // SERP analyses
+        supabase
+          .from("serp_analyses")
+          .select("id, niche, keywords, created_at, user_id")
+          .order("created_at", { ascending: false })
+          .limit(100),
+        // Recent audit log entries (RLS: any internal-staff role can read)
+        supabase
+          .from("audit_logs")
+          .select("id, actor_user_id, actor_role, action, entity_type, entity_id, metadata, created_at")
+          .order("created_at", { ascending: false })
+          .limit(100),
+      ]);
 
       if (profilesError) throw profilesError;
       setProfiles(profilesData || []);
 
-      // Fetch blog posts (without join for now to avoid type errors)
-      const { data: postsData, error: postsError } = await supabase
-        .from("blog_posts")
-        .select("id, title, status, created_at, user_id")
-        .order("created_at", { ascending: false })
-        .limit(100);
-
       if (postsError) throw postsError;
       setBlogPosts(postsData || []);
-
-      // Fetch content plans
-      const { data: plansData, error: plansError} = await supabase
-        .from("content_plans")
-        .select("id, niche, keywords, created_at, user_id")
-        .order("created_at", { ascending: false })
-        .limit(100);
 
       if (plansError) throw plansError;
       setContentPlans(plansData || []);
 
-      // Fetch SERP analyses
-      const { data: serpData, error: serpError } = await supabase
-        .from("serp_analyses")
-        .select("id, niche, keywords, created_at, user_id")
-        .order("created_at", { ascending: false })
-        .limit(100);
-
       if (serpError) throw serpError;
       setSerpAnalyses(serpData || []);
-
-      // Fetch recent audit log entries (RLS: any internal-staff role can read)
-      const { data: auditData, error: auditError } = await supabase
-        .from("audit_logs")
-        .select("id, actor_user_id, actor_role, action, entity_type, entity_id, metadata, created_at")
-        .order("created_at", { ascending: false })
-        .limit(100);
 
       if (auditError) console.error("Error fetching audit logs:", auditError);
       setAuditLogs(auditData || []);
@@ -389,7 +395,7 @@ const Admin = () => {
                             </Badge>
                           </TableCell>
                           <TableCell>{profile.posts_used_this_month || 0}</TableCell>
-                          <TableCell>{profile.posts_quota_monthly || 5}</TableCell>
+                          <TableCell>{profile.posts_quota_monthly || 15}</TableCell>
                           <TableCell>
                             {profile.wp_url ? (
                               <Badge variant="outline" className="text-green-400 border-green-400">Connected</Badge>

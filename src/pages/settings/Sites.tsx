@@ -124,11 +124,17 @@ const Sites = () => {
   };
 
   const handleSetDefault = async (siteId: string) => {
-    // Clear existing default, set new one
-    const updates = sites.map(s =>
-      supabase.from("wordpress_sites").update({ is_default: s.id === siteId }).eq("id", s.id)
-    );
-    await Promise.all(updates);
+    // Clear the previous default and set the new one in 2 scoped queries
+    // instead of 1 update per site.
+    let clearQuery = supabase.from("wordpress_sites").update({ is_default: false }).neq("id", siteId);
+    clearQuery = currentOrg
+      ? clearQuery.eq("org_id", currentOrg.id)
+      : clearQuery.eq("user_id", user!.id).is("org_id", null);
+
+    await Promise.all([
+      clearQuery,
+      supabase.from("wordpress_sites").update({ is_default: true }).eq("id", siteId),
+    ]);
     setSites(prev => prev.map(s => ({ ...s, is_default: s.id === siteId })));
     toast({ title: "Default site updated" });
   };

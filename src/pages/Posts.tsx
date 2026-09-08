@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -106,16 +106,16 @@ const Posts = () => {
     toast({ title: `Exported as ${format.toUpperCase()}` });
   };
 
-  const filteredPosts = posts.filter((p) => {
+  const filteredPosts = useMemo(() => posts.filter((p) => {
     const matchStatus = statusFilter === "all" || p.status === statusFilter;
     const matchSearch = !searchQuery || p.title.toLowerCase().includes(searchQuery.toLowerCase());
     return matchStatus && matchSearch;
-  });
+  }), [posts, statusFilter, searchQuery]);
 
-  const statusCounts = posts.reduce((acc, p) => {
+  const statusCounts = useMemo(() => posts.reduce((acc, p) => {
     acc[p.status] = (acc[p.status] || 0) + 1;
     return acc;
-  }, {} as Record<string, number>);
+  }, {} as Record<string, number>), [posts]);
 
   const headerActions = (
     <button

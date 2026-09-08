@@ -245,6 +245,45 @@ export type Database = {
         }
         Relationships: []
       }
+      wordpress_sites: {
+        Row: {
+          created_at: string
+          id: string
+          is_default: boolean
+          name: string
+          org_id: string | null
+          updated_at: string
+          user_id: string | null
+          wp_app_password_enc: string | null
+          wp_url: string
+          wp_username: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_default?: boolean
+          name: string
+          org_id?: string | null
+          updated_at?: string
+          user_id?: string | null
+          wp_app_password_enc?: string | null
+          wp_url: string
+          wp_username: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_default?: boolean
+          name?: string
+          org_id?: string | null
+          updated_at?: string
+          user_id?: string | null
+          wp_app_password_enc?: string | null
+          wp_url?: string
+          wp_username?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
