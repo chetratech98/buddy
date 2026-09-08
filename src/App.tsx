@@ -7,6 +7,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { Suspense, lazy } from "react";
 import { Loader2 } from "lucide-react";
+import { Analytics } from "@vercel/analytics/react";
 
 // Lazy-load all page components for code splitting
 const Index          = lazy(() => import("./pages/Index"));
@@ -100,6 +101,7 @@ const App = () => (
           </Suspense>
         </AuthProvider>
       </BrowserRouter>
+      <Analytics />
     </TooltipProvider>
   </QueryClientProvider>
 );
