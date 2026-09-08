@@ -451,11 +451,7 @@ const CreatePost = () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
-    <PageShell
-      backTo={step === "edit" ? undefined : "/"}
-      backLabel={step === "edit" ? "Back to prompt" : "Back to dashboard"}
-      wide
-    >
+    <PageShell wide>
       {step === "prompt" ? (
         <>
           <h1 className="text-3xl font-bold mb-2">Create a Blog Post</h1>

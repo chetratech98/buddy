@@ -370,7 +370,7 @@ const SeoAnalysis = () => {
 
   if (authLoading || profileLoading) {
     return (
-      <PageShell wide backTo="/" backLabel="Back to Home">
+      <PageShell wide>
         <div className="flex items-center justify-center py-24">
           <Loader2 className="animate-spin text-primary" size={36} />
         </div>
@@ -406,7 +406,7 @@ const SeoAnalysis = () => {
   );
 
   return (
-    <PageShell wide backTo="/" backLabel="Back to Home" headerActions={headerActions}>
+    <PageShell wide headerActions={headerActions}>
         <div className="mb-8">
           <h1 className="text-3xl font-bold flex items-center gap-3">
             <Search className="text-primary" size={28} />

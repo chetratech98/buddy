@@ -167,10 +167,6 @@
     @apply max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12;
   }
 
-  .back-button {
-    @apply inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors duration-150;
-  }
-
   /* ── App page cards (used throughout dashboard pages) ── */
   .card-elevated {
     @apply bg-white rounded-xl border;

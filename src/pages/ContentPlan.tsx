@@ -69,7 +69,7 @@ const ContentPlan = () => {
 
   if (authLoading || profileLoading) {
     return (
-      <PageShell backTo="/" backLabel="Back to Home">
+      <PageShell>
         <div className="flex items-center justify-center py-24" role="status" aria-label="Loading">
           <Loader2 className="animate-spin text-primary" size={32} />
         </div>
@@ -90,7 +90,7 @@ const ContentPlan = () => {
   ) : undefined;
 
   return (
-    <PageShell backTo="/" backLabel="Back to Home" headerActions={headerActions}>
+    <PageShell headerActions={headerActions}>
         <div className="flex items-center gap-3 mb-8">
           <Calendar size={28} className="text-primary" aria-hidden="true" />
           <div>

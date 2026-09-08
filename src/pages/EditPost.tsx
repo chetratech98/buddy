@@ -305,7 +305,7 @@ const EditPost = () => {
 
   if (loading) {
     return (
-      <PageShell backTo="/posts" backLabel="Back to posts" wide>
+      <PageShell wide>
         <div className="flex items-center justify-center py-24">
           <Loader2 className="animate-spin text-primary" size={32} />
         </div>
@@ -314,7 +314,7 @@ const EditPost = () => {
   }
 
   return (
-    <PageShell backTo="/posts" backLabel="Back to posts" wide>
+    <PageShell wide>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Edit Post</h1>
         <button

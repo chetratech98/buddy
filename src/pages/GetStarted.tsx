@@ -165,7 +165,7 @@ const GetStarted = () => {
 
   if (loading) {
     return (
-      <PageShell backTo="/" backLabel="Back to home">
+      <PageShell>
         <div className="flex items-center justify-center py-24">
           <Loader2 className="animate-spin text-primary" size={32} />
         </div>
@@ -231,7 +231,7 @@ const GetStarted = () => {
   const isEnrichedLongTail = result?.longTailKeywords?.length && typeof result.longTailKeywords[0] !== "string";
 
   return (
-    <PageShell backTo="/" backLabel="Back to home">
+    <PageShell>
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
