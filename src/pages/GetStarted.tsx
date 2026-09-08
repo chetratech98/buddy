@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Globe, Sparkles, Loader2, Tag, TrendingUp, Target, Layers, AlertTriangle, Search, ArrowRight, Pencil, Check, X, Plus } from "lucide-react";
+import { Globe, Sparkles, Loader2, Tag, TrendingUp, Target, Layers, AlertTriangle, Search, ArrowRight, Pencil, Check, X, Plus, Users, Radar, Flame } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +34,17 @@ interface TopicCluster {
   supporting: string[];
 }
 
+interface IdealCustomerProfile {
+  name: string;
+  role: string;
+  companySize?: string;
+  description: string;
+  painPoints: string[];
+  goals: string[];
+  buyingTriggers: string[];
+  preferredChannels: string[];
+}
+
 interface AnalysisResult {
   niche: string;
   subNiches?: string[];
@@ -42,6 +53,7 @@ interface AnalysisResult {
   longTailKeywords: EnrichedLongTail[] | string[];
   topicClusters?: TopicCluster[];
   competitorKeywordGaps?: string[];
+  idealCustomerProfiles?: IdealCustomerProfile[];
   flatKeywords?: string[];
   flatLongTail?: string[];
 }
@@ -367,11 +379,12 @@ const GetStarted = () => {
               {/* Tabbed Results */}
               {isEnrichedKeywords ? (
                 <Tabs defaultValue="keywords" className="w-full">
-                  <TabsList className="grid w-full grid-cols-4 mb-4">
+                  <TabsList className="grid w-full grid-cols-5 mb-4">
                     <TabsTrigger value="keywords" className="gap-1.5"><Tag size={14} /> Keywords</TabsTrigger>
                     <TabsTrigger value="longtail" className="gap-1.5"><Search size={14} /> Long-Tail</TabsTrigger>
                     <TabsTrigger value="clusters" className="gap-1.5"><Layers size={14} /> Clusters</TabsTrigger>
                     <TabsTrigger value="gaps" className="gap-1.5"><Target size={14} /> Gaps</TabsTrigger>
+                    <TabsTrigger value="icp" className="gap-1.5"><Users size={14} /> ICP</TabsTrigger>
                   </TabsList>
 
                   {/* Keywords Tab */}
@@ -525,6 +538,109 @@ const GetStarted = () => {
                           </div>
                         ) : (
                           <p className="text-muted-foreground text-sm">No gap data available. Re-run analysis for enriched results.</p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+
+                  {/* Ideal Customer Profiles Tab */}
+                  <TabsContent value="icp">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          <Users size={18} className="text-primary" />
+                          Ideal Customer Profiles
+                          {result.idealCustomerProfiles && result.idealCustomerProfiles.length > 0 && (
+                            <Badge variant="secondary" className="ml-auto">{result.idealCustomerProfiles.length} profiles</Badge>
+                          )}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        {result.idealCustomerProfiles && result.idealCustomerProfiles.length > 0 ? (
+                          <div className="grid gap-4 md:grid-cols-2">
+                            {result.idealCustomerProfiles.map((icp, i) => (
+                              <motion.div
+                                key={i}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: i * 0.06 }}
+                                className="p-4 rounded-xl border border-border bg-muted/30 flex flex-col gap-3"
+                              >
+                                <div>
+                                  <div className="flex items-start justify-between gap-2">
+                                    <h4 className="font-semibold text-foreground leading-tight">{icp.name}</h4>
+                                    <Badge variant="outline" className="text-[10px] shrink-0">#{i + 1}</Badge>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    {icp.role}
+                                    {icp.companySize ? ` · ${icp.companySize}` : ""}
+                                  </p>
+                                </div>
+
+                                {icp.description && (
+                                  <p className="text-sm text-foreground/80 leading-relaxed">{icp.description}</p>
+                                )}
+
+                                {icp.painPoints?.length > 0 && (
+                                  <div>
+                                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                                      <AlertTriangle size={11} /> Pain Points
+                                    </span>
+                                    <ul className="mt-1.5 space-y-1">
+                                      {icp.painPoints.map((p, j) => (
+                                        <li key={j} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                                          <span className="text-destructive mt-0.5">•</span> {p}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+
+                                {icp.goals?.length > 0 && (
+                                  <div>
+                                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                                      <Target size={11} /> Goals
+                                    </span>
+                                    <ul className="mt-1.5 space-y-1">
+                                      {icp.goals.map((g, j) => (
+                                        <li key={j} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                                          <span className="text-primary mt-0.5">•</span> {g}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+
+                                {icp.buyingTriggers?.length > 0 && (
+                                  <div>
+                                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                                      <Flame size={11} /> Buying Triggers
+                                    </span>
+                                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                      {icp.buyingTriggers.map((t, j) => (
+                                        <Badge key={j} variant="outline" className="text-[10px]">{t}</Badge>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {icp.preferredChannels?.length > 0 && (
+                                  <div>
+                                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                                      <Radar size={11} /> Preferred Channels
+                                    </span>
+                                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                      {icp.preferredChannels.map((c, j) => (
+                                        <Badge key={j} variant="secondary" className="text-[10px]">{c}</Badge>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </motion.div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-muted-foreground text-sm">No ICP data available. Re-run analysis for enriched results.</p>
                         )}
                       </CardContent>
                     </Card>

@@ -10,6 +10,195 @@ const corsHeaders = {
   "Access-Control-Max-Age": "86400",
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Standard output extraction
+//
+// Every field in the response goes through the same normalize-and-default
+// pipeline below, regardless of what shape the AI actually returned. This
+// guarantees the frontend always receives a predictable, complete shape —
+// a missing/malformed field from the model never breaks rendering.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const INTENTS = ["informational", "navigational", "commercial", "transactional"] as const;
+const DIFFICULTIES = ["low", "medium", "high"] as const;
+const PRIORITIES = ["high", "medium", "low"] as const;
+
+type Intent = typeof INTENTS[number];
+type Difficulty = typeof DIFFICULTIES[number];
+type Priority = typeof PRIORITIES[number];
+
+interface ExtractedKeyword {
+  term: string;
+  intent: Intent;
+  difficulty: Difficulty;
+  priority: Priority;
+  cluster: string;
+}
+
+interface ExtractedLongTail {
+  term: string;
+  intent: Intent;
+  difficulty: Difficulty;
+  searchContext: string;
+}
+
+interface ExtractedCluster {
+  pillar: string;
+  supporting: string[];
+}
+
+interface ExtractedICP {
+  name: string;
+  role: string;
+  companySize: string;
+  description: string;
+  painPoints: string[];
+  goals: string[];
+  buyingTriggers: string[];
+  preferredChannels: string[];
+}
+
+interface ExtractedAnalysis {
+  niche: string;
+  subNiches: string[];
+  description: string;
+  keywords: ExtractedKeyword[];
+  longTailKeywords: ExtractedLongTail[];
+  topicClusters: ExtractedCluster[];
+  competitorKeywordGaps: string[];
+  idealCustomerProfiles: ExtractedICP[];
+}
+
+function str(v: unknown, fallback = ""): string {
+  return typeof v === "string" && v.trim() ? v.trim() : fallback;
+}
+
+function strArray(v: unknown, max = 20): string[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .filter((x): x is string => typeof x === "string" && x.trim().length > 0)
+    .map((s) => s.trim())
+    .slice(0, max);
+}
+
+function oneOf<T extends string>(v: unknown, allowed: readonly T[], fallback: T): T {
+  return typeof v === "string" && (allowed as readonly string[]).includes(v) ? (v as T) : fallback;
+}
+
+function extractKeyword(raw: unknown): ExtractedKeyword | null {
+  if (typeof raw === "string") {
+    const term = str(raw);
+    return term ? { term, intent: "informational", difficulty: "medium", priority: "medium", cluster: "" } : null;
+  }
+  if (raw && typeof raw === "object") {
+    const o = raw as Record<string, unknown>;
+    const term = str(o.term);
+    if (!term) return null;
+    return {
+      term,
+      intent: oneOf(o.intent, INTENTS, "informational"),
+      difficulty: oneOf(o.difficulty, DIFFICULTIES, "medium"),
+      priority: oneOf(o.priority, PRIORITIES, "medium"),
+      cluster: str(o.cluster),
+    };
+  }
+  return null;
+}
+
+function extractLongTail(raw: unknown): ExtractedLongTail | null {
+  if (typeof raw === "string") {
+    const term = str(raw);
+    return term ? { term, intent: "informational", difficulty: "low", searchContext: "" } : null;
+  }
+  if (raw && typeof raw === "object") {
+    const o = raw as Record<string, unknown>;
+    const term = str(o.term);
+    if (!term) return null;
+    return {
+      term,
+      intent: oneOf(o.intent, INTENTS, "informational"),
+      difficulty: oneOf(o.difficulty, DIFFICULTIES, "low"),
+      searchContext: str(o.searchContext),
+    };
+  }
+  return null;
+}
+
+function extractCluster(raw: unknown): ExtractedCluster | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const pillar = str(o.pillar);
+  if (!pillar) return null;
+  return { pillar, supporting: strArray(o.supporting, 8) };
+}
+
+function extractICP(raw: unknown): ExtractedICP | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const name = str(o.name);
+  if (!name) return null;
+  return {
+    name,
+    role: str(o.role),
+    companySize: str(o.companySize, "N/A"),
+    description: str(o.description),
+    painPoints: strArray(o.painPoints, 6),
+    goals: strArray(o.goals, 6),
+    buyingTriggers: strArray(o.buyingTriggers, 5),
+    preferredChannels: strArray(o.preferredChannels, 5),
+  };
+}
+
+/**
+ * Pulls a JSON object out of a raw LLM response — strips markdown code
+ * fences, and if the model added stray prose outside the JSON block, falls
+ * back to grabbing the first {...} region in the text.
+ */
+function extractJsonObject(raw: string): Record<string, unknown> {
+  const stripped = raw.replace(/```json\n?/gi, "").replace(/```\n?/g, "").trim();
+  try {
+    return JSON.parse(stripped);
+  } catch {
+    const match = stripped.match(/\{[\s\S]*\}/);
+    if (match) {
+      try {
+        return JSON.parse(match[0]);
+      } catch {
+        // fall through to empty object below
+      }
+    }
+    return {};
+  }
+}
+
+/**
+ * Standard extraction pipeline for the whole analysis payload. Every field
+ * is independently validated and defaulted here — this is the single place
+ * that decides what "a valid analyze-site result" looks like.
+ */
+function extractAnalysis(rawContent: string): ExtractedAnalysis {
+  const parsed = extractJsonObject(rawContent);
+
+  return {
+    niche: str(parsed.niche, "Unknown"),
+    subNiches: strArray(parsed.subNiches, 6),
+    description: str(parsed.description),
+    keywords: Array.isArray(parsed.keywords)
+      ? parsed.keywords.map(extractKeyword).filter((k): k is ExtractedKeyword => k !== null)
+      : [],
+    longTailKeywords: Array.isArray(parsed.longTailKeywords)
+      ? parsed.longTailKeywords.map(extractLongTail).filter((k): k is ExtractedLongTail => k !== null)
+      : [],
+    topicClusters: Array.isArray(parsed.topicClusters)
+      ? parsed.topicClusters.map(extractCluster).filter((c): c is ExtractedCluster => c !== null)
+      : [],
+    competitorKeywordGaps: strArray(parsed.competitorKeywordGaps, 8),
+    idealCustomerProfiles: Array.isArray(parsed.idealCustomerProfiles)
+      ? parsed.idealCustomerProfiles.map(extractICP).filter((p): p is ExtractedICP => p !== null).slice(0, 5)
+      : [],
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -173,7 +362,19 @@ Analyze the website and return a JSON object with this exact structure:
       "supporting": ["3-5 supporting subtopics"]
     }
   ],
-  "competitorKeywordGaps": ["3-5 keyword opportunities competitors likely rank for but this site may not"]
+  "competitorKeywordGaps": ["3-5 keyword opportunities competitors likely rank for but this site may not"],
+  "idealCustomerProfiles": [
+    {
+      "name": "Short persona title, e.g. 'Growth-Stage SaaS Marketing Lead'",
+      "role": "Job title / role, or business type for B2C (e.g. 'VP of Marketing' or 'Busy home cook')",
+      "companySize": "e.g. '11-50 employees', 'Solo founder', or 'N/A' for B2C",
+      "description": "1-2 sentence summary of who this person is and why this business fits their needs",
+      "painPoints": ["2-4 specific pain points this persona has"],
+      "goals": ["2-3 goals this persona is trying to achieve"],
+      "buyingTriggers": ["1-3 events or moments that push this persona to look for a solution"],
+      "preferredChannels": ["1-3 channels where this persona discovers content or products, e.g. 'LinkedIn', 'Google Search', 'Reddit communities'"]
+    }
+  ]
 }
 
 Requirements:
@@ -182,7 +383,8 @@ Requirements:
 - Provide 3-5 topic clusters
 - Keywords must be specific to this business, not generic industry terms
 - Difficulty should reflect real competitiveness (most keywords for smaller sites should be low-medium)
-- Priority should consider business impact and ranking feasibility`;
+- Priority should consider business impact and ranking feasibility
+- Provide EXACTLY 5 distinct Ideal Customer Profiles (idealCustomerProfiles), each representing a genuinely different buyer segment for this specific business — not 5 minor variations of the same persona`;
 
     const aiResp = await fetch(
       "https://api.openai.com/v1/chat/completions",
@@ -221,27 +423,22 @@ Requirements:
     const aiData = await aiResp.json();
     const content = aiData.choices?.[0]?.message?.content || "";
 
-    let result;
-    try {
-      const jsonStr = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-      result = JSON.parse(jsonStr);
-    } catch {
-      result = { niche: "Unknown", description: content, keywords: [], longTailKeywords: [], topicClusters: [], subNiches: [], competitorKeywordGaps: [] };
+    // Every field below is guaranteed present with a validated shape —
+    // see extractAnalysis() and its per-field helpers above.
+    const result = extractAnalysis(content);
+    if (result.niche === "Unknown" || result.keywords.length === 0) {
+      console.warn(`[analyze-site] Extraction produced a sparse result for ${normalizedUrl} — raw AI content may not have been valid JSON.`);
     }
 
-    // Normalize: ensure backward compat (flat keyword arrays alongside enriched)
-    const flatKeywords = Array.isArray(result.keywords)
-      ? result.keywords.map((k: any) => (typeof k === "string" ? k : k.term))
-      : [];
-    const flatLongTail = Array.isArray(result.longTailKeywords)
-      ? result.longTailKeywords.map((k: any) => (typeof k === "string" ? k : k.term))
-      : [];
+    // Flat arrays for profile-saving compatibility, derived from the same
+    // normalized keyword objects (never a separate parse path).
+    const flatKeywords = result.keywords.map((k) => k.term);
+    const flatLongTail = result.longTailKeywords.map((k) => k.term);
 
     return new Response(JSON.stringify({
       success: true,
       data: {
         ...result,
-        // Keep flat arrays for profile saving compatibility
         flatKeywords,
         flatLongTail,
       }
