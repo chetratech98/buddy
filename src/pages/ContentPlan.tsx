@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import {
-  ArrowLeft,
   Loader2,
   Sparkles,
   Calendar,
@@ -19,8 +18,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+import { PageShell } from "@/components/PageShell";
 import { useContentPlan } from "@/components/content-plan/useContentPlan";
-import { PlanHeader } from "@/components/content-plan/PlanHeader";
 import { InputSources } from "@/components/content-plan/InputSources";
 import { PlanItem } from "@/components/content-plan/PlanItem";
 import { GenerationProgress } from "@/components/content-plan/GenerationProgress";
@@ -31,7 +30,6 @@ import { useState } from "react";
 const ContentPlan = () => {
   const {
     user,
-    signOut,
     authLoading,
     profileLoading,
     niche,
@@ -56,7 +54,6 @@ const ContentPlan = () => {
     updateItem,
     removeItem,
     generateBrief,
-    navigate,
   } = useContentPlan();
 
   const [showControls, setShowControls] = useState(false);
@@ -72,51 +69,34 @@ const ContentPlan = () => {
 
   if (authLoading || profileLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center" role="status" aria-label="Loading">
-        <Loader2 className="animate-spin text-primary" size={32} />
-      </div>
+      <PageShell backTo="/" backLabel="Back to Home">
+        <div className="flex items-center justify-center py-24" role="status" aria-label="Loading">
+          <Loader2 className="animate-spin text-primary" size={32} />
+        </div>
+      </PageShell>
     );
   }
 
+  const headerActions = plan.length > 0 ? (
+    <button
+      onClick={() => setShowControls(!showControls)}
+      className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors border border-border rounded-xl px-4 py-2"
+      aria-expanded={showControls}
+      aria-controls="plan-controls"
+    >
+      <RefreshCw size={14} />
+      Regenerate
+    </button>
+  ) : undefined;
+
   return (
-    <div className="min-h-screen bg-background">
-      <PlanHeader
-        onSignOut={async () => {
-          await signOut();
-          navigate("/");
-        }}
-      />
-
-      <main className="max-w-4xl mx-auto px-6 py-12">
-        <nav aria-label="Breadcrumb" className="mb-8">
-          <button
-            onClick={() => navigate("/")}
-            className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ArrowLeft size={16} /> Back to Home
-          </button>
-        </nav>
-
-
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-3">
-            <Calendar size={28} className="text-primary" aria-hidden="true" />
-            <div>
-              <h1 className="text-3xl font-bold">Content Plan</h1>
-              <p className="text-sm text-muted-foreground">30-day billing cycle</p>
-            </div>
+    <PageShell backTo="/" backLabel="Back to Home" headerActions={headerActions}>
+        <div className="flex items-center gap-3 mb-8">
+          <Calendar size={28} className="text-primary" aria-hidden="true" />
+          <div>
+            <h1 className="text-3xl font-bold">Content Plan</h1>
+            <p className="text-sm text-muted-foreground">30-day billing cycle</p>
           </div>
-          {plan.length > 0 && (
-            <button
-              onClick={() => setShowControls(!showControls)}
-              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors border border-border rounded-xl px-4 py-2"
-              aria-expanded={showControls}
-              aria-controls="plan-controls"
-            >
-              <RefreshCw size={14} />
-              Regenerate
-            </button>
-          )}
         </div>
 
 
@@ -254,8 +234,7 @@ const ContentPlan = () => {
             </div>
           )
         )}
-      </main>
-    </div>
+    </PageShell>
   );
 };
 

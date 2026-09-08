@@ -195,6 +195,7 @@ const CreatePost = () => {
   const [tags, setTags] = useState<string[]>([]);
   const [seoTitle, setSeoTitle] = useState("");
   const [seoDescription, setSeoDescription] = useState("");
+  const [ogImagePrompt, setOgImagePrompt] = useState("");
   const [scheduledAt, setScheduledAt] = useState<Date | null>(null);
   const [platformWordpress, setPlatformWordpress] = useState(false);
   const [platformMedium, setPlatformMedium] = useState(false);
@@ -369,6 +370,7 @@ const CreatePost = () => {
       setPostKeywords(data.keywords || []);
       setSeoTitle((data.title || "").slice(0, 60));
       setSeoDescription((data.excerpt || "").slice(0, 160));
+      setOgImagePrompt(data.ogImagePrompt || "");
       setCompetitorUrls(data.competitorUrlsAnalyzed || []);
       setStep("edit");
     } catch (e) {
@@ -421,6 +423,7 @@ const CreatePost = () => {
       tags,
       seo_title:          seoTitle,
       seo_description:    seoDescription,
+      og_image_prompt:    ogImagePrompt,
       scheduled_at:       scheduledAt?.toISOString() || null,
       published_at:       saveStatus === "published" ? new Date().toISOString() : null,
       platform_wordpress: platformWordpress,
@@ -1024,6 +1027,8 @@ const CreatePost = () => {
               onSeoTitleChange={setSeoTitle}
               seoDescription={seoDescription}
               onSeoDescriptionChange={setSeoDescription}
+              ogImagePrompt={ogImagePrompt}
+              onOgImagePromptChange={setOgImagePrompt}
             />
           </div>
         </div>

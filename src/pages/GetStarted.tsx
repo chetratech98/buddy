@@ -7,8 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
+import { PageShell } from "@/components/PageShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -164,7 +163,15 @@ const GetStarted = () => {
     }
   }, [user]);
 
-  if (loading) return null;
+  if (loading) {
+    return (
+      <PageShell backTo="/" backLabel="Back to home">
+        <div className="flex items-center justify-center py-24">
+          <Loader2 className="animate-spin text-primary" size={32} />
+        </div>
+      </PageShell>
+    );
+  }
 
   const handleAnalyze = async () => {
     const trimmed = url.trim();
@@ -224,9 +231,7 @@ const GetStarted = () => {
   const isEnrichedLongTail = result?.longTailKeywords?.length && typeof result.longTailKeywords[0] !== "string";
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
-      <Navbar />
-      <main className="flex-1 px-6 py-20">
+    <PageShell backTo="/" backLabel="Back to home">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -564,9 +569,7 @@ const GetStarted = () => {
             </div>
           )}
         </motion.div>
-      </main>
-      <Footer />
-    </div>
+    </PageShell>
   );
 };
 

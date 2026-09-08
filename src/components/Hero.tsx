@@ -248,33 +248,6 @@ const Hero = () => {
             </div>
           </motion.div>
         </div>
-
-        {/* Stats bar */}
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.55, duration: 0.5 }}
-          className="mt-14 sm:mt-20 pt-10 border-t border-border grid grid-cols-2 sm:grid-cols-4 gap-6 sm:gap-10"
-        >
-          {[
-            { value: "50,000+", label: "Blog posts generated" },
-            { value: "2,400+",  label: "Businesses growing" },
-            { value: "3.2×",    label: "Average traffic increase" },
-            { value: "4.9★",    label: "User rating" },
-          ].map((s, i) => (
-            <motion.div
-              key={s.label}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.6 + i * 0.07 }}
-            >
-              <div className="text-2xl sm:text-3xl font-black text-foreground tracking-tight leading-none">
-                {s.value}
-              </div>
-              <div className="text-sm text-muted-foreground mt-1.5">{s.label}</div>
-            </motion.div>
-          ))}
-        </motion.div>
       </div>
     </section>
   );

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { searchSerp, scrapePage } from "../_shared/scraping.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -30,61 +31,19 @@ async function fetchCompetitorUrls(
   serpApiKey: string,
   limit = 5
 ): Promise<Array<{ url: string; title: string; domain: string; snippet: string }>> {
-  try {
-    const url = new URL("https://serpapi.com/search.json");
-    url.searchParams.set("q", keyword);
-    url.searchParams.set("api_key", serpApiKey);
-    url.searchParams.set("engine", "google");
-    url.searchParams.set("num", "10");
-    url.searchParams.set("gl", "us");
-    url.searchParams.set("hl", "en");
-
-    const res = await fetch(url.toString(), {
-      signal: AbortSignal.timeout(12000),
-    });
-    if (!res.ok) return [];
-
-    const data = await res.json();
-    return (data.organic_results || [])
-      .slice(0, limit)
-      .filter((r: any) => r.link)
-      .map((r: any) => ({
-        url: r.link,
-        title: r.title || "",
-        domain: r.displayed_link || "",
-        snippet: r.snippet || "",
-      }));
-  } catch {
-    return [];
-  }
+  const { organic } = await searchSerp(keyword, serpApiKey, { num: 10, retries: 1 });
+  return organic
+    .slice(0, limit)
+    .filter((r) => r.url)
+    .map((r) => ({ url: r.url, title: r.title, domain: r.domain, snippet: r.snippet }));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: scrape a single URL with Firecrawl, return cleaned markdown
 // ─────────────────────────────────────────────────────────────────────────────
 async function scrapeUrl(url: string, firecrawlKey: string): Promise<string> {
-  try {
-    const res = await fetch("https://api.firecrawl.dev/v1/scrape", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${firecrawlKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        url,
-        formats: ["markdown"],
-        onlyMainContent: true,
-        waitFor: 2000,
-      }),
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) return "";
-    const data = await res.json();
-    const markdown = (data?.data?.markdown || data?.markdown || "").slice(0, 4000);
-    return markdown;
-  } catch {
-    return "";
-  }
+  const scraped = await scrapePage(url, firecrawlKey, { maxChars: 4000, timeoutMs: 10000, retries: 1 });
+  return scraped.markdown;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -164,6 +123,7 @@ interface BlogPost {
   excerpt: string;
   content: string;
   keywords: string[];
+  ogImagePrompt?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -182,24 +142,47 @@ serve(async (req) => {
 
   try {
     // ── Auth ──────────────────────────────────────────────────────────────────
+    // Two callers are supported:
+    //  1. A logged-in user's browser — Authorization: Bearer <user JWT>, verified via getUser().
+    //  2. A trusted server-to-server caller (e.g. the daily-blog-generator cron job) —
+    //     Authorization: Bearer <SERVICE_ROLE_KEY> plus an explicit `user_id` in the body,
+    //     since a service-role key has no associated auth.getUser() identity to check.
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return jsonResponse({ error: "Unauthorized" }, 401);
     }
+    const bearerToken = authHeader.slice("Bearer ".length);
+    const body = await req.json();
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
-      { global: { headers: { Authorization: authHeader } } }
-    );
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) return jsonResponse({ error: "Unauthorized" }, 401);
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    const isServiceRoleCall = Boolean(serviceRoleKey) && bearerToken === serviceRoleKey;
+
+    let supabase: ReturnType<typeof createClient>;
+    let userId: string;
+
+    if (isServiceRoleCall) {
+      const impersonatedUserId = typeof body.user_id === "string" ? body.user_id : "";
+      if (!impersonatedUserId) {
+        return jsonResponse({ error: "user_id is required for service-role calls" }, 400);
+      }
+      supabase = createClient(Deno.env.get("SUPABASE_URL") ?? "", serviceRoleKey);
+      userId = impersonatedUserId;
+    } else {
+      supabase = createClient(
+        Deno.env.get("SUPABASE_URL") ?? "",
+        Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+        { global: { headers: { Authorization: authHeader } } }
+      );
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) return jsonResponse({ error: "Unauthorized" }, 401);
+      userId = user.id;
+    }
 
     // ── Quota check ───────────────────────────────────────────────────────────
     const { data: quotaProfile, error: quotaError } = await supabase
       .from("profiles")
       .select("subscription_tier, posts_used_this_month, posts_quota_monthly")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .single();
 
     if (!quotaError && quotaProfile) {
@@ -215,11 +198,10 @@ serve(async (req) => {
         }
       }
       // Increment usage counter before generation (prevents races)
-      await supabase.rpc("check_and_increment_quota", { p_user_id: user.id });
+      await supabase.rpc("check_and_increment_quota", { p_user_id: userId });
     }
 
     // ── Input validation ──────────────────────────────────────────────────────
-    const body = await req.json();
     const topic    = typeof body.topic    === "string" ? body.topic.trim().slice(0, 1000)   : "";
     const keywords = typeof body.keywords === "string" ? body.keywords.trim().slice(0, 500) : "";
     const tone     = typeof body.tone     === "string" ? body.tone.trim().slice(0, 50)      : "professional";
@@ -250,7 +232,7 @@ serve(async (req) => {
       const intelligenceRes = await supabase.functions.invoke("content-intelligence", {
         body: {
           keyword: primaryKeyword,
-          userId: user.id,
+          userId,
           includeOutline: true,
           includeHeadings: true,
           includeFAQ: true,
@@ -356,6 +338,13 @@ QUALITY STANDARDS:
 - Use numbered lists, bullet points, and tables for better readability
 - ${contentIntelligence ? 'Follow the EXACT outline structure provided in Content Intelligence section' : 'Create a logical structure'}
 
+ALSO generate an "ogImagePrompt": a single vivid, detailed prompt (2–4 sentences) suitable for
+feeding directly into an AI image generator (DALL-E, Midjourney, Stable Diffusion) to create this
+post's Open Graph / featured image. It must describe: the subject/scene, a concrete visual style
+(e.g. flat illustration, photorealistic, 3D render, isometric), a specific color palette, and
+composition/framing suited to a 1200×630 social share image. Never ask for embedded text, logos,
+or words rendered in the image itself — describe imagery only.
+
 Respond in VALID JSON ONLY. No markdown fences outside the JSON.
 JSON format:
 {
@@ -363,6 +352,7 @@ JSON format:
   "excerpt": "Compelling 1–2 sentence summary for meta description (120–160 chars)",
   "content": "Full markdown content (${intelligenceWordCount} words target)",
   "keywords": ["keyword1", "keyword2", ...],
+  "ogImagePrompt": "Detailed AI image-generation prompt for the OG/featured image",
   "wordCount": <integer>,
   "competitorUrlsAnalyzed": <integer>
 }`;
@@ -445,7 +435,7 @@ EXPAND this post to ${targetWordCount} words by:
 Current post:
 ${JSON.stringify(post)}
 
-Return ONLY valid JSON in the exact same format: { title, excerpt, content, keywords, wordCount, competitorUrlsAnalyzed }
+Return ONLY valid JSON in the exact same format: { title, excerpt, content, keywords, ogImagePrompt, wordCount, competitorUrlsAnalyzed }
 The content must be at least ${targetWordCount} words.`;
 
       const expandedRaw = await callOpenAI(
@@ -478,11 +468,12 @@ FIX ANY OF THESE ISSUES (if present):
 7. FAQ section must exist (3+ questions)
 8. Content type is "${contentType}" — verify the structure matches: how-to uses numbered steps, listicle has individual H2s per item, case-study has Results section, opinion takes a clear stance
 9. Verify "wordCount" field reflects actual content word count
+10. Keep "ogImagePrompt" as-is unless it's missing or empty — it is not affected by content edits
 
 Current post:
 ${JSON.stringify(post)}
 
-Return ONLY valid JSON: { title, excerpt, content, keywords, wordCount, competitorUrlsAnalyzed }
+Return ONLY valid JSON: { title, excerpt, content, keywords, ogImagePrompt, wordCount, competitorUrlsAnalyzed }
 If everything is correct, return unchanged.`;
 
     try {
@@ -496,7 +487,9 @@ If everything is correct, return unchanged.`;
       );
       const reviewedPost = parseJSON<BlogPost & { wordCount?: number; competitorUrlsAnalyzed?: number }>(reviewedRaw);
       if (reviewedPost?.title && reviewedPost?.content) {
-        post = reviewedPost;
+        // Merge (not replace) so fields the review prompt doesn't ask the model
+        // to echo back — like ogImagePrompt — survive even if omitted.
+        post = { ...post, ...reviewedPost, ogImagePrompt: reviewedPost.ogImagePrompt || post.ogImagePrompt };
         console.log("[generate-blog] QA review pass complete");
       }
     } catch (reviewErr) {
@@ -506,6 +499,7 @@ If everything is correct, return unchanged.`;
     // ── Final metadata ─────────────────────────────────────────────────────────
     post.wordCount = countWords(post.content || "");
     post.competitorUrlsAnalyzed = competitorUrls.length;
+    post.ogImagePrompt = post.ogImagePrompt || "";
 
     // Add content intelligence metadata if available
     const response: any = {

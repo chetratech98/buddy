@@ -12,6 +12,9 @@ import {
   Download,
   Code,
   FileDown,
+  Image,
+  Copy,
+  Check,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import ReactMarkdown from "react-markdown";
@@ -36,6 +39,7 @@ interface ExistingPost {
   content: string;
   keywords: string[];
   status: string;
+  og_image_prompt?: string;
 }
 
 const TodaysBlog = () => {
@@ -52,6 +56,8 @@ const TodaysBlog = () => {
   const [excerpt, setExcerpt] = useState("");
   const [content, setContent] = useState("");
   const [keywords, setKeywords] = useState<string[]>([]);
+  const [ogImagePrompt, setOgImagePrompt] = useState("");
+  const [promptCopied, setPromptCopied] = useState(false);
   const [previewMode, setPreviewMode] = useState(false);
   const [alreadyPostedToday, setAlreadyPostedToday] = useState(false);
   const [tone, setTone] = useState("professional");
@@ -101,6 +107,7 @@ const TodaysBlog = () => {
         setExcerpt(post.excerpt || "");
         setContent(post.content);
         setKeywords(post.keywords || []);
+        setOgImagePrompt(post.og_image_prompt || "");
       }
 
       if (profileRes.data?.niche) setNiche(profileRes.data.niche);
@@ -156,6 +163,7 @@ const TodaysBlog = () => {
       setExcerpt(data.excerpt || "");
       setContent(data.content || "");
       setKeywords(data.keywords || [todayItem.keyword]);
+      setOgImagePrompt(data.ogImagePrompt || "");
 
       const { data: saved, error: saveError } = await supabase
         .from("blog_posts")
@@ -165,6 +173,7 @@ const TodaysBlog = () => {
           excerpt: data.excerpt || "",
           content: data.content || "",
           keywords: data.keywords || [todayItem.keyword],
+          og_image_prompt: data.ogImagePrompt || "",
           status: "draft",
         })
         .select()
@@ -181,17 +190,26 @@ const TodaysBlog = () => {
     }
   };
 
+  const copyOgImagePrompt = async () => {
+    if (!ogImagePrompt) return;
+    try {
+      await navigator.clipboard.writeText(ogImagePrompt);
+      setPromptCopied(true);
+      setTimeout(() => setPromptCopied(false), 2000);
+    } catch { /* clipboard unavailable — ignore */ }
+  };
+
   const handleSave = async (status: "draft" | "published") => {
     if (!existingPost || !user) return;
     setSaving(true);
     try {
       const { error } = await supabase
         .from("blog_posts")
-        .update({ title, excerpt, content, keywords, status })
+        .update({ title, excerpt, content, keywords, og_image_prompt: ogImagePrompt, status })
         .eq("id", existingPost.id);
 
       if (error) throw error;
-      setExistingPost({ ...existingPost, title, excerpt, content, keywords, status });
+      setExistingPost({ ...existingPost, title, excerpt, content, keywords, og_image_prompt: ogImagePrompt, status });
       toast({
         title: status === "published" ? "Published!" : "Saved!",
         description: status === "published" ? "Your blog post is now published." : "Draft saved.",
@@ -205,9 +223,11 @@ const TodaysBlog = () => {
 
   if (authLoading || loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <Loader2 className="animate-spin text-primary" size={32} />
-      </div>
+      <PageShell wide>
+        <div className="flex items-center justify-center py-24">
+          <Loader2 className="animate-spin text-primary" size={32} />
+        </div>
+      </PageShell>
     );
   }
 
@@ -256,7 +276,7 @@ const TodaysBlog = () => {
   ) : undefined;
 
   return (
-    <PageShell wide showSignOut headerActions={headerActions}>
+    <PageShell wide headerActions={headerActions}>
       <div className="flex items-center gap-3 mb-8">
         <div className="w-12 h-12 rounded-2xl bg-primary/8 flex items-center justify-center">
           <CalendarCheck size={24} className="text-primary" />
@@ -433,6 +453,29 @@ const TodaysBlog = () => {
                   rows={20}
                   className="input-base font-mono text-sm resize-y"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5 flex items-center gap-1.5">
+                  <Image size={14} className="text-muted-foreground" /> OG Image Prompt
+                </label>
+                <p className="text-xs text-muted-foreground mb-2">
+                  AI-generated prompt for the featured/OG image. Paste it into DALL-E, Midjourney, or your preferred image generator.
+                </p>
+                <textarea
+                  value={ogImagePrompt}
+                  onChange={(e) => setOgImagePrompt(e.target.value)}
+                  rows={3}
+                  className="input-base font-mono text-sm resize-y"
+                  placeholder="No image prompt generated yet."
+                />
+                <button
+                  onClick={copyOgImagePrompt}
+                  disabled={!ogImagePrompt}
+                  className="mt-2 btn-secondary flex items-center gap-2 text-sm disabled:opacity-50"
+                >
+                  {promptCopied ? <Check size={14} /> : <Copy size={14} />}
+                  {promptCopied ? "Copied!" : "Copy Prompt"}
+                </button>
               </div>
             </div>
           )}

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isUrlSafeToFetch } from "../_shared/scraping.ts";
 
 async function decryptPassword(encryptedBase64: string, keyStr: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -105,6 +106,12 @@ serve(async (req) => {
       throw new Error("WordPress URL or username not configured. Please update your profile settings.");
     }
 
+    const urlCheck = isUrlSafeToFetch(wp_url);
+    if (!urlCheck.safe) {
+      throw new Error(`Invalid WordPress URL: ${urlCheck.reason}. Please re-save your WordPress settings.`);
+    }
+    const safeWpUrl = urlCheck.normalized!;
+
     // Prepare WordPress post data
     const wpPost: WordPressPost = {
       title: post.title,
@@ -119,7 +126,7 @@ serve(async (req) => {
     }
 
     // WordPress REST API endpoint
-    const wpApiUrl = `${wp_url.replace(/\/$/, '')}/wp-json/wp/v2/posts`;
+    const wpApiUrl = `${safeWpUrl.replace(/\/$/, '')}/wp-json/wp/v2/posts`;
 
     // Create Basic Auth header
     const authString = btoa(`${wp_username}:${wp_app_password}`);

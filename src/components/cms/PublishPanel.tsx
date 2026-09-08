@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Calendar, Clock, Globe, Send, Save, Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import { Calendar, Clock, Globe, Send, Save, Loader2, ChevronDown, ChevronUp, Image, Copy, Check } from "lucide-react";
 import { format } from "date-fns";
 import { Calendar as CalendarUI } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -27,6 +27,8 @@ interface PublishPanelProps {
   onSeoTitleChange: (v: string) => void;
   seoDescription: string;
   onSeoDescriptionChange: (v: string) => void;
+  ogImagePrompt: string;
+  onOgImagePromptChange: (v: string) => void;
 }
 
 const STATUS_CONFIG: Record<PostStatus, { label: string; color: string; icon: typeof Clock }> = {
@@ -45,11 +47,23 @@ export const PublishPanel = ({
   onSave, saving, category, onCategoryChange,
   tags, onTagsChange, seoTitle, onSeoTitleChange,
   seoDescription, onSeoDescriptionChange,
+  ogImagePrompt, onOgImagePromptChange,
 }: PublishPanelProps) => {
   const [tagInput, setTagInput] = useState("");
   const [showSeo, setShowSeo] = useState(false);
   const [showPlatforms, setShowPlatforms] = useState(false);
+  const [showOgImage, setShowOgImage] = useState(false);
   const [scheduledTime, setScheduledTime] = useState("09:00");
+  const [promptCopied, setPromptCopied] = useState(false);
+
+  const copyPrompt = async () => {
+    if (!ogImagePrompt) return;
+    try {
+      await navigator.clipboard.writeText(ogImagePrompt);
+      setPromptCopied(true);
+      setTimeout(() => setPromptCopied(false), 2000);
+    } catch { /* clipboard unavailable — ignore */ }
+  };
 
   const addTag = () => {
     const trimmed = tagInput.trim();
@@ -196,6 +210,38 @@ export const PublishPanel = ({
               <label className="block text-xs font-medium mb-1.5 text-muted-foreground">Meta Description <span className="text-muted-foreground/60">({seoDescription.length}/160)</span></label>
               <textarea value={seoDescription} onChange={(e) => onSeoDescriptionChange(e.target.value)} maxLength={160} rows={3} className="input-base text-sm resize-none" placeholder="SEO meta description..." />
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* OG Image Prompt */}
+      <div className="card-elevated p-5">
+        <button onClick={() => setShowOgImage(!showOgImage)} className="flex items-center justify-between w-full">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+            <Image size={13} /> OG Image Prompt
+          </h3>
+          {showOgImage ? <ChevronUp size={14} className="text-muted-foreground" /> : <ChevronDown size={14} className="text-muted-foreground" />}
+        </button>
+        {showOgImage && (
+          <div className="space-y-3 mt-4">
+            <p className="text-xs text-muted-foreground">
+              AI-generated prompt for the featured/OG image. Paste it into DALL-E, Midjourney, or your preferred image generator.
+            </p>
+            <textarea
+              value={ogImagePrompt}
+              onChange={(e) => onOgImagePromptChange(e.target.value)}
+              rows={4}
+              className="input-base text-sm resize-none font-mono"
+              placeholder="No image prompt generated yet — regenerate the post to create one."
+            />
+            <button
+              onClick={copyPrompt}
+              disabled={!ogImagePrompt}
+              className="w-full btn-secondary flex items-center justify-center gap-2 py-2 text-sm disabled:opacity-50"
+            >
+              {promptCopied ? <Check size={14} /> : <Copy size={14} />}
+              {promptCopied ? "Copied!" : "Copy Prompt"}
+            </button>
           </div>
         )}
       </div>

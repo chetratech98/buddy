@@ -62,9 +62,11 @@ const Posts = () => {
   }, [user]);
 
   const fetchPosts = async () => {
+    // content is intentionally excluded — this is a list view, and post bodies
+    // can be large; fetched on-demand in handleExport instead.
     const { data, error } = await supabase
       .from("blog_posts")
-      .select("id, title, excerpt, content, keywords, status, category, tags, scheduled_at, published_at, created_at")
+      .select("id, title, excerpt, keywords, status, category, tags, scheduled_at, published_at, created_at")
       .eq("user_id", user!.id)
       .order("created_at", { ascending: false });
 
@@ -84,15 +86,21 @@ const Posts = () => {
     setDeleteTarget(null);
   };
 
-  const handleExport = (post: BlogPost, format: "html" | "markdown") => {
-    if (!post.content) {
+  const handleExport = async (post: BlogPost, format: "html" | "markdown") => {
+    const { data, error } = await supabase
+      .from("blog_posts")
+      .select("content")
+      .eq("id", post.id)
+      .single();
+
+    if (error || !data?.content) {
       toast({ title: "No content", description: "This post has no content to export.", variant: "destructive" });
       return;
     }
     if (format === "html") {
-      exportAsHTML(post.title, post.content, post.excerpt || undefined, post.keywords || undefined);
+      exportAsHTML(post.title, data.content, post.excerpt || undefined, post.keywords || undefined);
     } else {
-      exportAsMarkdown(post.title, post.content, post.excerpt || undefined, post.keywords || undefined);
+      exportAsMarkdown(post.title, data.content, post.excerpt || undefined, post.keywords || undefined);
     }
     setExportMenu(null);
     toast({ title: `Exported as ${format.toUpperCase()}` });

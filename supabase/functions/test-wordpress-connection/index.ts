@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isUrlSafeToFetch } from "../_shared/scraping.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -78,6 +79,12 @@ serve(async (req) => {
     if (!wpUrl || !wpUsername || !wpAppPassword) {
       return jsonResponse({ success: false, message: "WordPress credentials are not fully configured." });
     }
+
+    const urlCheck = isUrlSafeToFetch(wpUrl);
+    if (!urlCheck.safe) {
+      return jsonResponse({ success: false, message: `Invalid WordPress URL: ${urlCheck.reason}` });
+    }
+    wpUrl = urlCheck.normalized!;
 
     const apiUrl = `${wpUrl.replace(/\/$/, "")}/wp-json/wp/v2/users/me`;
     const authString = btoa(`${wpUsername}:${wpAppPassword}`);

@@ -1,5 +1,13 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  HIGH_DA_DOMAINS,
+  rootDomain,
+  calculateDifficulty,
+  classifyIntent,
+  searchSerp,
+  scrapePage,
+} from "../_shared/scraping.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -8,88 +16,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
   "Access-Control-Max-Age": "86400",
 };
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Known high-authority domains (used for difficulty scoring)
-// Higher DA domains in top 10 = harder to rank
-// ─────────────────────────────────────────────────────────────────────────────
-const HIGH_DA_DOMAINS = new Set([
-  "wikipedia.org", "youtube.com", "amazon.com", "reddit.com", "linkedin.com",
-  "forbes.com", "nytimes.com", "wsj.com", "techcrunch.com", "theguardian.com",
-  "bbc.com", "bbc.co.uk", "cnn.com", "huffpost.com", "businessinsider.com",
-  "healthline.com", "webmd.com", "mayoclinic.org", "nih.gov", "cdc.gov",
-  "gov.uk", "usa.gov", "who.int", "harvard.edu", "mit.edu", "stanford.edu",
-  "shopify.com", "hubspot.com", "moz.com", "semrush.com", "ahrefs.com",
-  "medium.com", "quora.com", "stackoverflow.com", "github.com",
-  "nerdwallet.com", "investopedia.com", "bankrate.com", "pcmag.com",
-  "cnet.com", "wired.com", "theverge.com", "engadget.com", "zdnet.com",
-]);
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helper: extract root domain from URL string
-// ─────────────────────────────────────────────────────────────────────────────
-function rootDomain(url: string): string {
-  try {
-    const host = new URL(url.startsWith("http") ? url : `https://${url}`).hostname;
-    const parts = host.split(".");
-    return parts.slice(-2).join(".");
-  } catch {
-    return url;
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Calculate difficulty score purely from SERP signals (0–100, no AI guessing)
-//
-// Signals:
-//   • High-DA domains in top 5      → +14 each (max 70)
-//   • High-DA domains in 6–10       → +4 each  (max 20)
-//   • SERP features present         → +4 each  (max 20)
-//   • Number of ads (if present)    → +3 each  (max 12)
-// ─────────────────────────────────────────────────────────────────────────────
-function calculateDifficulty(
-  organicResults: Array<{ position: number; url: string; domain: string }>,
-  serpFeatures: Record<string, boolean>,
-  adsCount = 0
-): { score: number; label: "low" | "medium" | "high" } {
-  let score = 0;
-
-  const top5  = organicResults.filter((r) => r.position <= 5);
-  const bot5  = organicResults.filter((r) => r.position > 5 && r.position <= 10);
-
-  for (const r of top5) {
-    const domain = rootDomain(r.url || r.domain);
-    if (HIGH_DA_DOMAINS.has(domain)) score += 14;
-  }
-  for (const r of bot5) {
-    const domain = rootDomain(r.url || r.domain);
-    if (HIGH_DA_DOMAINS.has(domain)) score += 4;
-  }
-
-  // SERP features (featured_snippet is strongest signal of competition)
-  const featureWeights: Record<string, number> = {
-    featured_snippet: 8,
-    knowledge_graph:  6,
-    people_also_ask:  4,
-    shopping_results: 4,
-    local_pack:       3,
-    image_pack:       2,
-    video_results:    2,
-    related_searches: 1,
-  };
-  for (const [feature, present] of Object.entries(serpFeatures)) {
-    if (present) score += featureWeights[feature] ?? 2;
-  }
-
-  // Paid ads signal commercial competition
-  score += Math.min(12, adsCount * 3);
-
-  const clamped = Math.min(100, Math.max(0, score));
-  const label: "low" | "medium" | "high" =
-    clamped >= 60 ? "high" : clamped >= 35 ? "medium" : "low";
-
-  return { score: clamped, label };
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Calculate real word count from text (strips markdown/HTML)
@@ -110,115 +36,15 @@ async function scrapeCompetitorMetrics(
   url: string,
   firecrawlKey: string
 ): Promise<{ wordCount: number; h2Count: number; hasFaq: boolean; markdown: string }> {
-  const fallback = { wordCount: 0, h2Count: 0, hasFaq: false, markdown: "" };
-  try {
-    const res = await fetch("https://api.firecrawl.dev/v1/scrape", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${firecrawlKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        url,
-        formats: ["markdown"],
-        onlyMainContent: true,
-        waitFor: 2000,
-      }),
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return fallback;
+  // maxChars kept large so word/heading counts reflect the full page, not a truncated slice
+  const scraped = await scrapePage(url, firecrawlKey, { maxChars: 100_000, retries: 1 });
+  if (!scraped.markdown) return { wordCount: 0, h2Count: 0, hasFaq: false, markdown: "" };
 
-    const data = await res.json();
-    const markdown: string = data?.data?.markdown || data?.markdown || "";
-    if (!markdown) return fallback;
+  const wordCount = countWordsPlain(scraped.markdown);
+  const h2Count   = (scraped.markdown.match(/^## .+/gm) ?? []).length;
+  const hasFaq    = /FAQ|Frequently Asked/i.test(scraped.markdown);
 
-    const wordCount = countWordsPlain(markdown);
-    const h2Count   = (markdown.match(/^## .+/gm) ?? []).length;
-    const hasFaq    = /FAQ|Frequently Asked/i.test(markdown);
-
-    return { wordCount, h2Count, hasFaq, markdown: markdown.slice(0, 2000) };
-  } catch {
-    return fallback;
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SerpApi: full search results + ads count
-// ─────────────────────────────────────────────────────────────────────────────
-async function searchWithSerpApi(query: string, apiKey: string) {
-  const empty = { organicResults: [], serpFeatures: {}, adsCount: 0 };
-  try {
-    const url = new URL("https://serpapi.com/search.json");
-    url.searchParams.set("q", query);
-    url.searchParams.set("api_key", apiKey);
-    url.searchParams.set("engine", "google");
-    url.searchParams.set("num", "10");
-    url.searchParams.set("gl", "us");
-    url.searchParams.set("hl", "en");
-
-    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(14000) });
-    if (!res.ok) return empty;
-
-    const data = await res.json();
-
-    const organicResults = (data.organic_results ?? []).map((r: any) => ({
-      position:    r.position,
-      title:       r.title || "Untitled",
-      url:         r.link || "",
-      domain:      r.displayed_link || r.source || rootDomain(r.link || ""),
-      description: r.snippet || "",
-      date:        r.date ?? null,
-    }));
-
-    const serpFeatures: Record<string, boolean> = {};
-    if (data.answer_box)        serpFeatures.featured_snippet = true;
-    if (data.knowledge_graph)   serpFeatures.knowledge_graph  = true;
-    if (data.related_questions) serpFeatures.people_also_ask  = true;
-    if (data.related_searches)  serpFeatures.related_searches = true;
-    if (data.local_results)     serpFeatures.local_pack       = true;
-    if (data.inline_images)     serpFeatures.image_pack       = true;
-    if (data.inline_videos)     serpFeatures.video_results    = true;
-    if (data.shopping_results)  serpFeatures.shopping_results = true;
-
-    const adsCount = (data.ads ?? []).length;
-
-    return { organicResults, serpFeatures, adsCount };
-  } catch (err) {
-    console.error("[seo-analysis] SerpApi error:", err);
-    return empty;
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Detect search intent from SERP patterns (rule-based, no AI)
-// ─────────────────────────────────────────────────────────────────────────────
-function detectSearchIntent(
-  keyword: string,
-  serpFeatures: Record<string, boolean>,
-  hasShoppingAds: boolean
-): { intent: string; confidence: number } {
-  const kw = keyword.toLowerCase();
-
-  // Transactional signals
-  if (
-    hasShoppingAds ||
-    serpFeatures.shopping_results ||
-    /\b(buy|purchase|price|cheap|deal|discount|order|shop|sale|coupon|cost)\b/.test(kw)
-  ) return { intent: "transactional", confidence: 88 };
-
-  // Commercial investigation
-  if (
-    /\b(best|top|review|vs|compare|comparison|alternative|pros|cons|recommended|rating)\b/.test(kw)
-  ) return { intent: "commercial", confidence: 82 };
-
-  // Navigational
-  if (
-    serpFeatures.knowledge_graph ||
-    /\b(login|sign in|sign up|download|official|website|app)\b/.test(kw)
-  ) return { intent: "navigational", confidence: 79 };
-
-  // Informational (default)
-  return { intent: "informational", confidence: 75 };
+  return { wordCount, h2Count, hasFaq, markdown: scraped.markdown.slice(0, 2000) };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -259,8 +85,8 @@ serve(async (req) => {
     console.log(`[seo-analysis] Fetching SERP data for ${limitedKeywords.length} keywords`);
     const serpEntries = await Promise.all(
       limitedKeywords.map(async (keyword: string) => {
-        const { organicResults, serpFeatures, adsCount } =
-          await searchWithSerpApi(`${keyword} ${niche}`.trim(), SERP_API_KEY);
+        const { organic: organicResults, features: serpFeatures, adsCount } =
+          await searchSerp(`${keyword} ${niche}`.trim(), SERP_API_KEY, { retries: 1 });
         return { keyword, organicResults, serpFeatures, adsCount };
       })
     );
@@ -302,10 +128,10 @@ serve(async (req) => {
       );
 
       // Real search intent from rule-based detection (no AI)
-      const { intent: searchIntent, confidence: intentConfidence } = detectSearchIntent(
+      const { intent: searchIntent, confidence: intentConfidence } = classifyIntent(
         keyword,
         serpFeatures,
-        adsCount > 0
+        adsCount
       );
 
       // Real content benchmarks from scraped pages
@@ -397,7 +223,7 @@ serve(async (req) => {
       mk.organicResults.slice(0, 5).forEach((r) => {
         const metrics = competitorMetricsMap.get(r.url);
         s += `  ${r.position}. ${r.title} (${r.domain}) — ${metrics?.wordCount ?? "?"} words, ${metrics?.h2Count ?? "?"} H2s\n`;
-        s += `     Snippet: ${r.description?.slice(0, 150) ?? ""}\n`;
+        s += `     Snippet: ${r.snippet?.slice(0, 150) ?? ""}\n`;
       });
       return s;
     }).join("\n");

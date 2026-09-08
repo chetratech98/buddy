@@ -1,13 +1,16 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Users, FileText, Calendar, BarChart, DollarSign } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Loader2, Users, FileText, Calendar, BarChart, DollarSign, ShieldCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { PageShell } from "@/components/PageShell";
+import { ADMIN_ROLES, ROLE_LABELS, can, type AdminRole } from "@/lib/rbac";
+import { logAdminAction } from "@/lib/audit";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -61,8 +64,19 @@ interface Subscription {
   profiles: { display_name: string } | null;
 }
 
+interface AuditLog {
+  id: string;
+  actor_user_id: string;
+  actor_role: string;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  metadata: any;
+  created_at: string;
+}
+
 const Admin = () => {
-  const { user } = useAuth();
+  const { user, profile: myProfile } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
@@ -78,16 +92,19 @@ const Admin = () => {
   const [contentPlans, setContentPlans] = useState<any[]>([]);
   const [serpAnalyses, setSerpAnalyses] = useState<any[]>([]);
   const [subscriptions, setSubscriptions] = useState<any[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [changingRoleFor, setChangingRoleFor] = useState<string | null>(null);
 
   const fetchAdminData = async () => {
     try {
       setLoading(true);
 
-      // Fetch profiles with subscription data
+      // Fetch profiles with subscription data — column-scoped to what the admin table actually renders
       const { data: profilesData, error: profilesError } = await supabase
         .from("profiles")
-        .select("*")
-        .order("created_at", { ascending: false });
+        .select("id, user_id, display_name, role, subscription_tier, subscription_status, posts_used_this_month, posts_quota_monthly, wp_url, created_at")
+        .order("created_at", { ascending: false })
+        .limit(500);
 
       if (profilesError) throw profilesError;
       setProfiles(profilesData || []);
@@ -95,7 +112,7 @@ const Admin = () => {
       // Fetch blog posts (without join for now to avoid type errors)
       const { data: postsData, error: postsError } = await supabase
         .from("blog_posts")
-        .select("*")
+        .select("id, title, status, created_at, user_id")
         .order("created_at", { ascending: false })
         .limit(100);
 
@@ -105,7 +122,7 @@ const Admin = () => {
       // Fetch content plans
       const { data: plansData, error: plansError} = await supabase
         .from("content_plans")
-        .select("*")
+        .select("id, niche, keywords, created_at, user_id")
         .order("created_at", { ascending: false })
         .limit(100);
 
@@ -115,12 +132,22 @@ const Admin = () => {
       // Fetch SERP analyses
       const { data: serpData, error: serpError } = await supabase
         .from("serp_analyses")
-        .select("*")
+        .select("id, niche, keywords, created_at, user_id")
         .order("created_at", { ascending: false })
         .limit(100);
 
       if (serpError) throw serpError;
       setSerpAnalyses(serpData || []);
+
+      // Fetch recent audit log entries (RLS: any internal-staff role can read)
+      const { data: auditData, error: auditError } = await supabase
+        .from("audit_logs")
+        .select("id, actor_user_id, actor_role, action, entity_type, entity_id, metadata, created_at")
+        .order("created_at", { ascending: false })
+        .limit(100);
+
+      if (auditError) console.error("Error fetching audit logs:", auditError);
+      setAuditLogs(auditData || []);
 
       // Note: Subscriptions will be available after migration is applied
       // For now, extract subscription info from profiles table
@@ -154,6 +181,50 @@ const Admin = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const canManageRoles = can(myProfile?.role, "manage_roles");
+
+  const changeRole = async (targetProfile: { id: string; user_id: string; display_name: string; role?: string }, newRole: string) => {
+    if (!user || !canManageRoles) return;
+    const previousRole = targetProfile.role || "user";
+    if (newRole === previousRole) return;
+
+    setChangingRoleFor(targetProfile.id);
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ role: newRole })
+        .eq("id", targetProfile.id);
+      if (error) throw error;
+
+      setProfiles((prev) => prev.map((p) => (p.id === targetProfile.id ? { ...p, role: newRole } : p)));
+
+      await logAdminAction({
+        actorUserId: user.id,
+        actorRole: myProfile?.role || "unknown",
+        action: "role_changed",
+        entityType: "profile",
+        entityId: targetProfile.user_id,
+        metadata: { display_name: targetProfile.display_name, from: previousRole, to: newRole },
+      });
+
+      toast({ title: "Role updated", description: `${targetProfile.display_name || "User"} is now ${newRole}.` });
+    } catch (error) {
+      toast({
+        title: "Failed to update role",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setChangingRoleFor(null);
+    }
+  };
+
+  // O(1) author lookups instead of profiles.find(...) per row
+  const profilesByUserId = useMemo(
+    () => new Map(profiles.map((p) => [p.user_id, p])),
+    [profiles]
+  );
+
   if (loading) {
     return (
       <PageShell>
@@ -167,11 +238,19 @@ const Admin = () => {
   return (
     <PageShell>
       <div className="container mx-auto py-8 px-4">
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-            Admin Dashboard
-          </h1>
-          <p className="text-gray-400">Manage users, content, and system analytics</p>
+        <div className="mb-8 flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+              Admin Dashboard
+            </h1>
+            <p className="text-gray-400">Manage users, content, and system analytics</p>
+          </div>
+          {myProfile?.role && (
+            <Badge variant="outline" className="flex items-center gap-1.5 text-sm py-1.5 px-3 border-purple-500/40 text-purple-300">
+              <ShieldCheck size={14} />
+              Signed in as {ROLE_LABELS[myProfile.role as AdminRole] || myProfile.role}
+            </Badge>
+          )}
         </div>
 
         {/* Stats Overview */}
@@ -239,12 +318,13 @@ const Admin = () => {
 
         {/* Data Tables */}
         <Tabs defaultValue="users" className="w-full">
-          <TabsList className="grid w-full grid-cols-5 bg-gray-800/50">
+          <TabsList className="grid w-full grid-cols-6 bg-gray-800/50">
             <TabsTrigger value="users">Users</TabsTrigger>
             <TabsTrigger value="posts">Blog Posts</TabsTrigger>
             <TabsTrigger value="plans">Content Plans</TabsTrigger>
             <TabsTrigger value="seo">SEO Analysis</TabsTrigger>
             <TabsTrigger value="subscriptions">Subscriptions</TabsTrigger>
+            <TabsTrigger value="audit">Audit Logs</TabsTrigger>
           </TabsList>
 
           {/* Users Tab */}
@@ -261,6 +341,7 @@ const Admin = () => {
                       <TableRow>
                         <TableHead>Display Name</TableHead>
                         <TableHead>User ID</TableHead>
+                        <TableHead>Role</TableHead>
                         <TableHead>Subscription</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Posts Used</TableHead>
@@ -274,6 +355,29 @@ const Admin = () => {
                         <TableRow key={profile.id}>
                           <TableCell className="font-medium">{profile.display_name || "N/A"}</TableCell>
                           <TableCell className="font-mono text-xs">{profile.user_id.slice(0, 8)}...</TableCell>
+                          <TableCell>
+                            {canManageRoles ? (
+                              <Select
+                                value={profile.role || "user"}
+                                disabled={changingRoleFor === profile.id}
+                                onValueChange={(newRole) => changeRole(profile, newRole)}
+                              >
+                                <SelectTrigger className="h-8 w-[130px] text-xs bg-gray-800/50 border-gray-700">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="user">User</SelectItem>
+                                  {ADMIN_ROLES.map((r) => (
+                                    <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Badge variant="outline" className="text-xs">
+                                {profile.role && profile.role !== "user" ? (ROLE_LABELS as any)[profile.role] || profile.role : "User"}
+                              </Badge>
+                            )}
+                          </TableCell>
                           <TableCell>
                             <Badge variant={profile.subscription_tier === 'free' ? 'secondary' : 'default'}>
                               {profile.subscription_tier || 'free'}
@@ -324,7 +428,7 @@ const Admin = () => {
                     </TableHeader>
                     <TableBody>
                       {blogPosts.map((post) => {
-                        const author = profiles.find(p => p.user_id === post.user_id);
+                        const author = profilesByUserId.get(post.user_id);
                         return (
                           <TableRow key={post.id}>
                             <TableCell className="font-medium max-w-xs truncate">{post.title}</TableCell>
@@ -370,7 +474,7 @@ const Admin = () => {
                           <TableCell className="font-medium max-w-md truncate">
                             {plan.niche} {plan.keywords?.length > 0 && `(${plan.keywords.slice(0, 3).join(', ')})`}
                           </TableCell>
-                          <TableCell>{profiles.find(p => p.user_id === plan.user_id)?.display_name || "Unknown"}</TableCell>
+                          <TableCell>{profilesByUserId.get(plan.user_id)?.display_name || "Unknown"}</TableCell>
                           <TableCell>{new Date(plan.created_at).toLocaleDateString()}</TableCell>
                           <TableCell className="font-mono text-xs">{plan.id.slice(0, 8)}...</TableCell>
                         </TableRow>
@@ -406,7 +510,7 @@ const Admin = () => {
                           <TableCell className="font-medium max-w-md truncate">
                             {analysis.niche} {analysis.keywords?.length > 0 && `(${analysis.keywords.slice(0, 3).join(', ')})`}
                           </TableCell>
-                          <TableCell>{profiles.find(p => p.user_id === analysis.user_id)?.display_name || "Unknown"}</TableCell>
+                          <TableCell>{profilesByUserId.get(analysis.user_id)?.display_name || "Unknown"}</TableCell>
                           <TableCell>{new Date(analysis.created_at).toLocaleDateString()}</TableCell>
                           <TableCell className="font-mono text-xs">{analysis.id.slice(0, 8)}...</TableCell>
                         </TableRow>
@@ -459,6 +563,70 @@ const Admin = () => {
                           <TableCell className="font-mono text-xs">{sub.id.slice(0, 8)}...</TableCell>
                         </TableRow>
                       ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Audit Logs Tab */}
+          <TabsContent value="audit">
+            <Card className="bg-gray-900/50 border-gray-700">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-purple-400" />
+                  Audit Logs
+                </CardTitle>
+                <CardDescription>Every sensitive admin-portal action — who did what, when, on which entity</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>When</TableHead>
+                        <TableHead>Actor</TableHead>
+                        <TableHead>Role</TableHead>
+                        <TableHead>Action</TableHead>
+                        <TableHead>Entity</TableHead>
+                        <TableHead>Details</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {auditLogs.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center text-gray-400 py-8">
+                            No admin actions logged yet.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        auditLogs.map((log) => (
+                          <TableRow key={log.id}>
+                            <TableCell className="text-xs whitespace-nowrap">
+                              {new Date(log.created_at).toLocaleString()}
+                            </TableCell>
+                            <TableCell className="font-medium">
+                              {profilesByUserId.get(log.actor_user_id)?.display_name || log.actor_user_id.slice(0, 8) + "..."}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="text-xs">
+                                {(ROLE_LABELS as any)[log.actor_role] || log.actor_role}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="secondary" className="text-xs">{log.action}</Badge>
+                            </TableCell>
+                            <TableCell className="text-xs">
+                              {log.entity_type}
+                              {log.entity_id && <span className="text-gray-500"> · {log.entity_id.slice(0, 8)}...</span>}
+                            </TableCell>
+                            <TableCell className="font-mono text-xs max-w-xs truncate text-gray-400">
+                              {Object.keys(log.metadata || {}).length > 0 ? JSON.stringify(log.metadata) : "—"}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
                     </TableBody>
                   </Table>
                 </div>

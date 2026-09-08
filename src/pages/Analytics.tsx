@@ -280,14 +280,16 @@ const Analytics = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <Loader2 className="animate-spin text-primary" size={32} />
-      </div>
+      <PageShell>
+        <div className="flex items-center justify-center py-24">
+          <Loader2 className="animate-spin text-primary" size={32} />
+        </div>
+      </PageShell>
     );
   }
 
   return (
-    <PageShell showSignOut>
+    <PageShell>
       <div className="space-y-8">
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div>

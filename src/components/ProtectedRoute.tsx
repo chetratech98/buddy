@@ -9,7 +9,7 @@ interface Props {
 }
 
 const ProtectedRoute = ({ children, requireAdmin = false }: Props) => {
-  const { user, profile, loading } = useAuth();
+  const { user, isAdmin, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -24,7 +24,10 @@ const ProtectedRoute = ({ children, requireAdmin = false }: Props) => {
     return <Navigate to="/auth" state={{ from: location.pathname }} replace />;
   }
 
-  if (requireAdmin && profile?.role !== "admin") {
+  // isAdmin covers any of the 5 internal-staff roles (super_admin/ops/
+  // support/finance/read_only) — see src/lib/rbac.ts for per-action checks
+  // used *inside* the admin portal to gate specific mutations.
+  if (requireAdmin && !isAdmin) {
     return <Navigate to="/dashboard" replace />;
   }
 

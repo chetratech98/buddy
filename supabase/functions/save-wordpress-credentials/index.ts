@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isUrlSafeToFetch } from "../_shared/scraping.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -57,8 +58,9 @@ serve(async (req) => {
       return jsonResponse({ error: "wpUrl and wpUsername are required" }, 400);
     }
 
-    if (!wpUrl.match(/^https?:\/\/.+/)) {
-      return jsonResponse({ error: "WordPress URL must start with http:// or https://" }, 400);
+    const urlCheck = isUrlSafeToFetch(wpUrl);
+    if (!urlCheck.safe) {
+      return jsonResponse({ error: `Invalid WordPress URL: ${urlCheck.reason}` }, 400);
     }
 
     const encryptionKey = Deno.env.get("WP_ENCRYPTION_KEY");
@@ -67,7 +69,7 @@ serve(async (req) => {
     }
 
     const updatePayload: Record<string, string | null> = {
-      wp_url: wpUrl.trim(),
+      wp_url: urlCheck.normalized!,
       wp_username: wpUsername.trim(),
     };
 

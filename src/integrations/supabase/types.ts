@@ -14,6 +14,39 @@ export type Database = {
   }
   public: {
     Tables: {
+      audit_logs: {
+        Row: {
+          action: string
+          actor_role: string
+          actor_user_id: string
+          created_at: string
+          entity_id: string | null
+          entity_type: string
+          id: string
+          metadata: Json
+        }
+        Insert: {
+          action: string
+          actor_role: string
+          actor_user_id: string
+          created_at?: string
+          entity_id?: string | null
+          entity_type: string
+          id?: string
+          metadata?: Json
+        }
+        Update: {
+          action?: string
+          actor_role?: string
+          actor_user_id?: string
+          created_at?: string
+          entity_id?: string | null
+          entity_type?: string
+          id?: string
+          metadata?: Json
+        }
+        Relationships: []
+      }
       blog_posts: {
         Row: {
           category: string | null
@@ -23,6 +56,7 @@ export type Database = {
           featured_image_url: string | null
           id: string
           keywords: string[] | null
+          og_image_prompt: string | null
           platform_medium: boolean | null
           platform_status: Json | null
           platform_wordpress: boolean | null
@@ -44,6 +78,7 @@ export type Database = {
           featured_image_url?: string | null
           id?: string
           keywords?: string[] | null
+          og_image_prompt?: string | null
           platform_medium?: boolean | null
           platform_status?: Json | null
           platform_wordpress?: boolean | null
@@ -65,6 +100,7 @@ export type Database = {
           featured_image_url?: string | null
           id?: string
           keywords?: string[] | null
+          og_image_prompt?: string | null
           platform_medium?: boolean | null
           platform_status?: Json | null
           platform_wordpress?: boolean | null
@@ -131,6 +167,7 @@ export type Database = {
           niche: string | null
           org_goals: string | null
           org_vision: string | null
+          role: string
           updated_at: string
           user_id: string
           website_url: string | null
@@ -149,6 +186,7 @@ export type Database = {
           niche?: string | null
           org_goals?: string | null
           org_vision?: string | null
+          role?: string
           updated_at?: string
           user_id: string
           website_url?: string | null
@@ -167,6 +205,7 @@ export type Database = {
           niche?: string | null
           org_goals?: string | null
           org_vision?: string | null
+          role?: string
           updated_at?: string
           user_id?: string
           website_url?: string | null

@@ -11,6 +11,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isUrlSafeToFetch, scrapePage, searchSerp } from "../_shared/scraping.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -73,32 +74,9 @@ async function scrapeUrl(url: string, firecrawlKey: string): Promise<{
   title: string;
   wordCount: number;
 }> {
-  const fallback = { markdown: "", title: url, wordCount: 0 };
-  try {
-    const res = await fetch("https://api.firecrawl.dev/v1/scrape", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${firecrawlKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        url,
-        formats: ["markdown"],
-        onlyMainContent: true,
-        waitFor: 2000,
-      }),
-      signal: AbortSignal.timeout(10000),
-    });
-
-    if (!res.ok) return fallback;
-    const data = await res.json();
-    const markdown: string = data?.data?.markdown || data?.markdown || "";
-    const title:    string = data?.data?.metadata?.title || url;
-    const wordCount = markdown.split(/\s+/).filter((w) => w.length > 1).length;
-    return { markdown: markdown.slice(0, 6000), title, wordCount };
-  } catch {
-    return fallback;
-  }
+  const scraped = await scrapePage(url, firecrawlKey, { maxChars: 6000, timeoutMs: 10000, retries: 1 });
+  const wordCount = scraped.markdown.split(/\s+/).filter((w) => w.length > 1).length;
+  return { markdown: scraped.markdown, title: scraped.title || url, wordCount };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -153,27 +131,20 @@ serve(async (req) => {
     }
 
     // ── Fetch competitor URLs from SerpApi if not provided ───────────────────
-    let urlsToScrape = [...competitorUrls];
+    // SSRF check first: competitorUrls is user-supplied and goes straight into
+    // a scrape request, so it's validated before anything else touches it.
+    let urlsToScrape = competitorUrls.filter((u) => {
+      const check = isUrlSafeToFetch(u);
+      if (!check.safe) console.warn(`[content-gap] rejected unsafe competitor URL: ${u} (${check.reason})`);
+      return check.safe;
+    });
 
     if (urlsToScrape.length === 0 && SERP_API_KEY && targetKeyword) {
-      try {
-        const serpUrl = new URL("https://serpapi.com/search.json");
-        serpUrl.searchParams.set("q", targetKeyword);
-        serpUrl.searchParams.set("api_key", SERP_API_KEY);
-        serpUrl.searchParams.set("engine", "google");
-        serpUrl.searchParams.set("num", "5");
-
-        const serpRes = await fetch(serpUrl.toString(), { signal: AbortSignal.timeout(10000) });
-        if (serpRes.ok) {
-          const serpData = await serpRes.json();
-          urlsToScrape = (serpData.organic_results ?? [])
-            .slice(0, 5)
-            .map((r: any) => r.link)
-            .filter(Boolean);
-        }
-      } catch {
-        // continue without SERP
-      }
+      const { organic } = await searchSerp(targetKeyword, SERP_API_KEY, { num: 5, retries: 1 });
+      urlsToScrape = organic
+        .slice(0, 5)
+        .map((r) => r.url)
+        .filter((u) => Boolean(u) && isUrlSafeToFetch(u).safe);
     }
 
     if (urlsToScrape.length === 0) {

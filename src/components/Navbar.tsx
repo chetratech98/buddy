@@ -206,14 +206,24 @@ const Navbar = () => {
             )}
           </div>
 
-          {/* Mobile hamburger */}
-          <button
-            className="md:hidden p-2 rounded-lg hover:bg-secondary/80 transition-colors text-foreground"
-            onClick={() => setMobileOpen(true)}
-            aria-label="Open menu"
-          >
-            <Menu size={22} />
-          </button>
+          {/* Mobile right */}
+          <div className="md:hidden flex items-center gap-1.5">
+            {!user && (
+              <button
+                onClick={() => navigate("/auth")}
+                className="btn-primary text-xs px-3.5 py-2 rounded-lg"
+              >
+                Start Free Trial
+              </button>
+            )}
+            <button
+              className="p-2 rounded-lg hover:bg-secondary/80 transition-colors text-foreground"
+              onClick={() => setMobileOpen(true)}
+              aria-label="Open menu"
+            >
+              <Menu size={22} />
+            </button>
+          </div>
         </div>
       </motion.nav>
 

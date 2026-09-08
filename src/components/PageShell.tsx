@@ -9,12 +9,12 @@ interface PageShellProps {
   backTo?: string;
   backLabel?: string;
   wide?: boolean;
-  showSignOut?: boolean;
   hideBack?: boolean;
 }
 
 export const PageShell = ({
   children,
+  headerActions,
   backTo = "/",
   backLabel = "Back to home",
   wide = false,
@@ -28,14 +28,23 @@ export const PageShell = ({
 
       {/* Content */}
       <main className={wide ? "page-content-wide" : "page-content"}>
-        {!hideBack && (
-          <button
-            onClick={() => navigate(backTo)}
-            className="back-button"
-          >
-            <ArrowLeft size={14} />
-            <span>{backLabel}</span>
-          </button>
+        {(!hideBack || headerActions) && (
+          <div className="flex items-center justify-between gap-4 mb-6">
+            {!hideBack ? (
+              <button
+                onClick={() => navigate(backTo)}
+                className="back-button"
+              >
+                <ArrowLeft size={14} />
+                <span>{backLabel}</span>
+              </button>
+            ) : <div />}
+            {headerActions && (
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                {headerActions}
+              </div>
+            )}
+          </div>
         )}
         <div className="page-enter">
           {children}

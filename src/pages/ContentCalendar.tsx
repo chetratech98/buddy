@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { Calendar, momentLocalizer, View, SlotInfo } from "react-big-calendar";
-import moment from "moment";
+import { Calendar, dateFnsLocalizer, View, SlotInfo } from "react-big-calendar";
+import { format, parse, startOfWeek, getDay, addDays } from "date-fns";
+import { enUS } from "date-fns/locale";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -11,7 +12,13 @@ import { Loader2, Calendar as CalendarIcon, Plus } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import "./ContentCalendar.css";
 
-const localizer = momentLocalizer(moment);
+const localizer = dateFnsLocalizer({
+  format,
+  parse,
+  startOfWeek,
+  getDay,
+  locales: { "en-US": enUS },
+});
 
 interface CalendarEvent {
   id: string;
@@ -50,16 +57,16 @@ const ContentCalendar = () => {
         {
           id: '2',
           title: 'Content Marketing Strategy',
-          start: moment().add(2, 'days').toDate(),
-          end: moment().add(2, 'days').toDate(),
+          start: addDays(new Date(), 2),
+          end: addDays(new Date(), 2),
           status: 'scheduled',
           allDay: true
         },
         {
           id: '3',
           title: 'Social Media Trends 2026',
-          start: moment().add(5, 'days').toDate(),
-          end: moment().add(5, 'days').toDate(),
+          start: addDays(new Date(), 5),
+          end: addDays(new Date(), 5),
           status: 'draft',
           allDay: true
         }
@@ -135,7 +142,7 @@ const ContentCalendar = () => {
 
       toast({
         title: 'Post Rescheduled',
-        description: `Moved to ${moment(start).format('MMM DD, YYYY')}`
+        description: `Moved to ${format(start, 'MMM dd, yyyy')}`
       });
     } catch (error: any) {
       toast({
@@ -186,14 +193,16 @@ const ContentCalendar = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <Loader2 className="animate-spin text-primary" size={32} />
-      </div>
+      <PageShell>
+        <div className="flex items-center justify-center py-24">
+          <Loader2 className="animate-spin text-primary" size={32} />
+        </div>
+      </PageShell>
     );
   }
 
   return (
-    <PageShell showSignOut>
+    <PageShell>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -273,7 +282,7 @@ const ContentCalendar = () => {
                   </div>
                   <div>
                     <span className="font-medium">Date: </span>
-                    {selectedEvent && moment(selectedEvent.start).format('MMMM DD, YYYY')}
+                    {selectedEvent && format(selectedEvent.start, 'MMMM dd, yyyy')}
                   </div>
                   <div className="flex gap-2 mt-4">
                     <button

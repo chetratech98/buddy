@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isUrlSafeToFetch, scrapePage, fetchWithRetry } from "../_shared/scraping.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -26,21 +27,14 @@ serve(async (req) => {
     }
 
     // SSRF protection
-    const normalizedUrl = url.startsWith("http") ? url : `https://${url}`;
-    let parsedUrl: URL;
-    try {
-      parsedUrl = new URL(normalizedUrl);
-    } catch {
-      return new Response(JSON.stringify({ error: "Invalid URL format" }), {
+    const urlCheck = isUrlSafeToFetch(url);
+    if (!urlCheck.safe) {
+      return new Response(JSON.stringify({ error: urlCheck.reason ?? "Invalid URL" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const blockedHosts = ["localhost", "127.0.0.1", "0.0.0.0", "10.", "172.16.", "192.168.", "[::1]"];
-    if (blockedHosts.some((h) => parsedUrl.hostname.includes(h))) {
-      return new Response(JSON.stringify({ error: "Invalid URL" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const normalizedUrl = urlCheck.normalized!;
+    const parsedUrl = new URL(normalizedUrl);
 
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
     if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not configured");
@@ -51,65 +45,44 @@ serve(async (req) => {
     let metaDescription = "";
     let headings: string[] = [];
     let links: string[] = [];
-    let brandingInfo: any = null;
 
     const FIRECRAWL_API_KEY = Deno.env.get("FIRECRAWL_API_KEY");
 
     if (FIRECRAWL_API_KEY) {
-      try {
-        console.log("Using Firecrawl for content extraction:", normalizedUrl);
+      console.log("Using Firecrawl for content extraction:", normalizedUrl);
+      const scraped = await scrapePage(normalizedUrl, FIRECRAWL_API_KEY, {
+        formats: ["markdown", "links"],
+        onlyMainContent: false, // Get full page for meta analysis
+        waitFor: 3000,
+        maxChars: 8000,
+        retries: 1,
+      });
 
-        // Scrape with multiple formats for comprehensive analysis
-        const scrapeResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${FIRECRAWL_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            url: normalizedUrl,
-            formats: ["markdown", "links", "branding"],
-            onlyMainContent: false, // Get full page for meta analysis
-            waitFor: 3000,
-          }),
-        });
+      pageContent = scraped.markdown;
+      links = scraped.links.slice(0, 50);
+      metaTitle = scraped.title;
+      metaDescription = scraped.description;
 
-        if (scrapeResp.ok) {
-          const scrapeData = await scrapeResp.json();
-          const d = scrapeData.data || scrapeData;
-
-          pageContent = (d.markdown || "").slice(0, 8000);
-          links = (d.links || []).slice(0, 50);
-          metaTitle = d.metadata?.title || "";
-          metaDescription = d.metadata?.description || "";
-
-          if (d.branding) {
-            brandingInfo = {
-              logo: d.branding.logo,
-              colorScheme: d.branding.colorScheme,
-            };
-          }
-
-          // Extract headings from markdown
-          const headingMatches = pageContent.match(/^#{1,3}\s+.+$/gm) || [];
-          headings = headingMatches.slice(0, 20).map((h: string) => h.replace(/^#+\s+/, ""));
-
-          console.log(`Firecrawl extracted: ${pageContent.length} chars, ${links.length} links, ${headings.length} headings`);
-        } else {
-          console.warn("Firecrawl failed, falling back to basic fetch:", scrapeResp.status);
-        }
-      } catch (e) {
-        console.warn("Firecrawl error, falling back:", e);
+      if (pageContent) {
+        const headingMatches = pageContent.match(/^#{1,3}\s+.+$/gm) || [];
+        headings = headingMatches.slice(0, 20).map((h: string) => h.replace(/^#+\s+/, ""));
+        console.log(`Firecrawl extracted: ${pageContent.length} chars, ${links.length} links, ${headings.length} headings`);
+      } else {
+        console.warn("Firecrawl returned no content, falling back to basic fetch");
       }
     }
 
     // Fallback to basic fetch if Firecrawl didn't work
     if (!pageContent) {
       try {
-        const pageResp = await fetch(normalizedUrl, {
-          headers: { "User-Agent": "Mozilla/5.0 (compatible; BlitzNovaBot/1.0)" },
-          signal: AbortSignal.timeout(8000),
-        });
+        const pageResp = await fetchWithRetry(
+          normalizedUrl,
+          {
+            headers: { "User-Agent": "Mozilla/5.0 (compatible; BlitzNovaBot/1.0)" },
+            signal: AbortSignal.timeout(8000),
+          },
+          { retries: 1, label: "basic-fetch" }
+        );
         const html = await pageResp.text();
 
         // Extract meta tags

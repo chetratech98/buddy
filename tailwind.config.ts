@@ -1,5 +1,6 @@
 import type { Config } from "tailwindcss";
 import tailwindcssAnimate from "tailwindcss-animate";
+import tailwindcssTypography from "@tailwindcss/typography";
 
 export default {
   darkMode: ["class"],
@@ -57,6 +58,12 @@ export default {
   				'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
   				border: 'hsl(var(--sidebar-border))',
   				ring: 'hsl(var(--sidebar-ring))'
+  			},
+  			chart: {
+  				1: 'hsl(var(--chart-1))',
+  				2: 'hsl(var(--chart-2))',
+  				3: 'hsl(var(--chart-3))',
+  				4: 'hsl(var(--chart-4))'
   			}
   		},
   		borderRadius: {
@@ -133,5 +140,5 @@ export default {
   		}
   	}
   },
-  plugins: [tailwindcssAnimate],
+  plugins: [tailwindcssAnimate, tailwindcssTypography],
 } satisfies Config;

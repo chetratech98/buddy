@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { isAdminRole } from "@/lib/rbac";
 
 const ORG_STORAGE_KEY = "buddy_current_org_id";
 
@@ -252,7 +253,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     await supabase.auth.signOut();
   };
 
-  const isAdmin = profile?.role === "admin";
+  // "Admin" here means "any internal-staff role" — see src/lib/rbac.ts for
+  // the finer-grained per-action permission checks used inside the portal.
+  const isAdmin = isAdminRole(profile?.role);
 
   return (
     <AuthContext.Provider value={{

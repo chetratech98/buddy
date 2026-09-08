@@ -158,6 +158,7 @@ const EditPost = () => {
   const [tags,            setTags]            = useState<string[]>([]);
   const [seoTitle,        setSeoTitle]        = useState("");
   const [seoDescription,  setSeoDescription]  = useState("");
+  const [ogImagePrompt,   setOgImagePrompt]   = useState("");
   const [scheduledAt,     setScheduledAt]     = useState<Date | null>(null);
   const [platformWordpress, setPlatformWordpress] = useState(false);
   const [platformMedium,    setPlatformMedium]    = useState(false);
@@ -195,6 +196,7 @@ const EditPost = () => {
         setTags(Array.isArray(data.tags) ? data.tags : []);
         setSeoTitle(data.seo_title ?? "");
         setSeoDescription(data.seo_description ?? "");
+        setOgImagePrompt(data.og_image_prompt ?? "");
         setScheduledAt(data.scheduled_at ? new Date(data.scheduled_at) : null);
         setPlatformWordpress(data.platform_wordpress ?? false);
         setPlatformMedium(data.platform_medium ?? false);
@@ -237,6 +239,7 @@ const EditPost = () => {
         tags,
         seo_title:          seoTitle,
         seo_description:    seoDescription,
+        og_image_prompt:    ogImagePrompt,
         scheduled_at:       scheduledAt?.toISOString() ?? null,
         published_at:       saveStatus === "published" ? new Date().toISOString() : undefined,
         platform_wordpress: platformWordpress,
@@ -302,9 +305,11 @@ const EditPost = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <Loader2 className="animate-spin text-primary" size={32} />
-      </div>
+      <PageShell backTo="/posts" backLabel="Back to posts" wide>
+        <div className="flex items-center justify-center py-24">
+          <Loader2 className="animate-spin text-primary" size={32} />
+        </div>
+      </PageShell>
     );
   }
 
@@ -461,6 +466,8 @@ const EditPost = () => {
             onSeoTitleChange={setSeoTitle}
             seoDescription={seoDescription}
             onSeoDescriptionChange={setSeoDescription}
+            ogImagePrompt={ogImagePrompt}
+            onOgImagePromptChange={setOgImagePrompt}
           />
         </div>
       </div>

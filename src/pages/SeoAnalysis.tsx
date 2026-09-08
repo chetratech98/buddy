@@ -2,8 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
+import { PageShell } from "@/components/PageShell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,7 +20,6 @@ import { motion } from "framer-motion";
 import {
   Search,
   TrendingUp,
-  ArrowLeft,
   Loader2,
   BarChart3,
   Lightbulb,
@@ -41,7 +39,6 @@ import {
 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { exportToCSV, exportCompetitorsToCSV, exportRecommendationsToCSV } from "@/lib/seo-analysis-export";
-import { exportToPDF } from "@/lib/seo-analysis-pdf-export";
 
 import {
   BarChart,
@@ -373,9 +370,11 @@ const SeoAnalysis = () => {
 
   if (authLoading || profileLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="animate-spin text-primary" size={36} />
-      </div>
+      <PageShell wide backTo="/" backLabel="Back to Home">
+        <div className="flex items-center justify-center py-24">
+          <Loader2 className="animate-spin text-primary" size={36} />
+        </div>
+      </PageShell>
     );
   }
 
@@ -391,39 +390,31 @@ const SeoAnalysis = () => {
     toast({ title: "Loaded past analysis", description: `From ${new Date(analysis.created_at).toLocaleDateString()}` });
   };
 
-  return (
-    <div className="min-h-screen bg-background text-foreground">
-      <Navbar />
-      <main className="max-w-7xl mx-auto px-6 py-10">
-        <button
-          onClick={() => navigate("/")}
-          className="flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6 transition-colors"
-        >
-          <ArrowLeft size={18} /> Back to Home
-        </button>
+  const headerActions = (
+    <>
+      {analysisHistory.length > 0 && (
+        <Button onClick={() => setShowHistory(!showHistory)} variant="outline" size="lg">
+          <History className="mr-2" size={18} />
+          History ({analysisHistory.length})
+        </Button>
+      )}
+      <Button onClick={handleAnalyze} disabled={analyzing || !niche} size="lg">
+        {analyzing ? <Loader2 className="animate-spin mr-2" size={18} /> : <TrendingUp className="mr-2" size={18} />}
+        {analyzing ? "Analyzing..." : "Run SERP Analysis"}
+      </Button>
+    </>
+  );
 
-        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-3xl font-bold flex items-center gap-3">
-              <Search className="text-primary" size={28} />
-              SERP Analysis
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Industry-standard competitive analysis with content benchmarks, search intent mapping & SERP features
-            </p>
-          </div>
-          <div className="flex gap-2">
-            {analysisHistory.length > 0 && (
-              <Button onClick={() => setShowHistory(!showHistory)} variant="outline" size="lg">
-                <History className="mr-2" size={18} />
-                History ({analysisHistory.length})
-              </Button>
-            )}
-            <Button onClick={handleAnalyze} disabled={analyzing || !niche} size="lg">
-              {analyzing ? <Loader2 className="animate-spin mr-2" size={18} /> : <TrendingUp className="mr-2" size={18} />}
-              {analyzing ? "Analyzing..." : "Run SERP Analysis"}
-            </Button>
-          </div>
+  return (
+    <PageShell wide backTo="/" backLabel="Back to Home" headerActions={headerActions}>
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold flex items-center gap-3">
+            <Search className="text-primary" size={28} />
+            SERP Analysis
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Industry-standard competitive analysis with content benchmarks, search intent mapping & SERP features
+          </p>
         </div>
 
         {/* Progress Indicator */}
@@ -1086,7 +1077,7 @@ const SeoAnalysis = () => {
 
             <div className="flex justify-end mt-8">
               <div className="flex gap-3">
-                <Button onClick={() => exportToPDF(result, niche)} variant="default" size="lg" className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700">
+                <Button onClick={async () => (await import("@/lib/seo-analysis-pdf-export")).exportToPDF(result, niche)} variant="default" size="lg" className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700">
                   <Download className="mr-2" size={18} />
                   Export as PDF
                 </Button>
@@ -1105,9 +1096,7 @@ const SeoAnalysis = () => {
             </div>
           </>
         )}
-      </main>
-      <Footer />
-    </div>
+    </PageShell>
   );
 };
 

@@ -23,6 +23,14 @@
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import {
+  rootDomain,
+  searchSerp,
+  scrapePage,
+  calculateDifficulty,
+  classifyIntent,
+  type SerpOrganicResult,
+} from "../_shared/scraping.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -31,28 +39,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
   "Access-Control-Max-Age": "86400",
 };
-
-// ─────────────────────────────────────────────────────────────────────────────
-// High-authority domain list (difficulty scoring)
-// ─────────────────────────────────────────────────────────────────────────────
-const HIGH_DA_DOMAINS = new Set([
-  "wikipedia.org","youtube.com","amazon.com","reddit.com","linkedin.com",
-  "forbes.com","nytimes.com","wsj.com","techcrunch.com","theguardian.com",
-  "bbc.com","bbc.co.uk","cnn.com","huffpost.com","businessinsider.com",
-  "healthline.com","webmd.com","mayoclinic.org","nih.gov","cdc.gov",
-  "gov.uk","usa.gov","who.int","harvard.edu","mit.edu","stanford.edu",
-  "shopify.com","hubspot.com","moz.com","semrush.com","ahrefs.com",
-  "medium.com","quora.com","stackoverflow.com","github.com",
-  "nerdwallet.com","investopedia.com","bankrate.com","pcmag.com",
-  "cnet.com","wired.com","theverge.com","engadget.com","zdnet.com",
-]);
-
-function rootDomain(url: string): string {
-  try {
-    const host = new URL(url.startsWith("http") ? url : `https://${url}`).hostname;
-    return host.replace(/^www\./, "").split(".").slice(-2).join(".");
-  } catch { return url; }
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MODULE 1: Keyword Cleaner
@@ -120,121 +106,9 @@ function clusterKeywords(
   return clusters;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MODULE 3: SERP Fetcher
-// Pull top 10 organic results + SERP features + PAA + ads via SerpApi
-// ─────────────────────────────────────────────────────────────────────────────
-interface SerpResult {
-  position: number;
-  title:    string;
-  url:      string;
-  domain:   string;
-  snippet:  string;
-  date:     string | null;
-}
-
-async function fetchSerp(
-  keyword: string,
-  apiKey: string,
-  country: string,
-  language: string
-): Promise<{
-  organic: SerpResult[];
-  features: Record<string, boolean>;
-  adsCount: number;
-  paa: string[];
-}> {
-  const empty = { organic: [], features: {}, adsCount: 0, paa: [] };
-  try {
-    const url = new URL("https://serpapi.com/search.json");
-    url.searchParams.set("q",       keyword);
-    url.searchParams.set("api_key", apiKey);
-    url.searchParams.set("engine",  "google");
-    url.searchParams.set("num",     "10");
-    url.searchParams.set("gl",      country);
-    url.searchParams.set("hl",      language);
-
-    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(14000) });
-    if (!res.ok) return empty;
-    const data = await res.json();
-
-    const organic: SerpResult[] = (data.organic_results ?? []).map(
-      (r: { position?: number; title?: string; link?: string; snippet?: string; date?: string }) => ({
-        position: r.position ?? 0,
-        title:    r.title    || "Untitled",
-        url:      r.link     || "",
-        domain:   rootDomain(r.link || ""),
-        snippet:  r.snippet  || "",
-        date:     r.date ?? null,
-      })
-    );
-
-    const features: Record<string, boolean> = {};
-    if (data.answer_box)        features.featured_snippet = true;
-    if (data.knowledge_graph)   features.knowledge_graph  = true;
-    if (data.related_questions) features.people_also_ask  = true;
-    if (data.related_searches)  features.related_searches = true;
-    if (data.local_results)     features.local_pack       = true;
-    if (data.inline_images)     features.image_pack       = true;
-    if (data.inline_videos)     features.video_results    = true;
-    if (data.shopping_results)  features.shopping_results = true;
-
-    const paa: string[] = (data.related_questions ?? [])
-      .slice(0, 8)
-      .map((q: { question?: string }) => (q.question ?? "").trim())
-      .filter(Boolean);
-
-    return { organic, features, adsCount: (data.ads ?? []).length, paa };
-  } catch (e) {
-    console.error("[serp-layer] SerpApi:", e);
-    return empty;
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// MODULE 4: Page Extractor
-// Scrape competitor page via Firecrawl, return markdown
-// ─────────────────────────────────────────────────────────────────────────────
-async function extractPage(url: string, key: string): Promise<string> {
-  try {
-    const res = await fetch("https://api.firecrawl.dev/v1/scrape", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        url,
-        formats: ["markdown"],
-        onlyMainContent: true,
-        waitFor: 2000,
-      }),
-      signal: AbortSignal.timeout(9000),
-    });
-    if (!res.ok) return "";
-    const data = await res.json();
-    const md: string = data?.data?.markdown || data?.markdown || "";
-    return md.slice(0, 4000);
-  } catch { return ""; }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// MODULE 5: Intent Classifier
-// Rule-based intent detection from SERP signals (no AI)
-// ─────────────────────────────────────────────────────────────────────────────
-function classifyIntent(
-  keyword: string,
-  features: Record<string, boolean>,
-  adsCount: number
-): { intent: string; confidence: number } {
-  const kw = keyword.toLowerCase();
-  if (adsCount >= 3 || features.shopping_results ||
-      /\b(buy|purchase|price|cheap|deal|discount|order|shop|sale|coupon|cost)\b/.test(kw))
-    return { intent: "transactional", confidence: 88 };
-  if (/\b(best|top|review|vs|versus|compare|comparison|alternative|pros|cons|rating|recommended)\b/.test(kw))
-    return { intent: "commercial_investigation", confidence: 82 };
-  if (features.knowledge_graph ||
-      /\b(login|sign in|sign up|download|official|website|app)\b/.test(kw))
-    return { intent: "navigational", confidence: 79 };
-  return { intent: "informational", confidence: 75 };
-}
+// MODULES 3-5: SERP fetching, page scraping, and intent classification now
+// live in ../_shared/scraping.ts as searchSerp / scrapePage / classifyIntent
+// (previously duplicated near-verbatim across this file and seo-analysis).
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MODULE 5 (cont.): Page-type detection from titles + URLs
@@ -380,33 +254,15 @@ function freshnessNote(organic: Array<{ date?: string | null }>): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Scoring helpers
+// Scoring helpers (domain-authority difficulty scoring now lives in
+// ../_shared/scraping.ts as calculateDifficulty — see call site below)
 // ─────────────────────────────────────────────────────────────────────────────
-function calcDifficultyProxy(
-  organic: Array<{ position: number; url: string }>,
-  features: Record<string, boolean>,
-  adsCount: number
-): number {
-  let score = 0;
-  for (const r of organic.filter((r) => r.position <= 5))
-    if (HIGH_DA_DOMAINS.has(rootDomain(r.url))) score += 14;
-  for (const r of organic.filter((r) => r.position > 5 && r.position <= 10))
-    if (HIGH_DA_DOMAINS.has(rootDomain(r.url))) score += 4;
-  const fw: Record<string, number> = {
-    featured_snippet: 8, knowledge_graph: 6, people_also_ask: 4,
-    shopping_results: 4, local_pack: 3, image_pack: 2, video_results: 2, related_searches: 1,
-  };
-  for (const [f, on] of Object.entries(features)) if (on) score += fw[f] ?? 2;
-  score += Math.min(12, adsCount * 3);
-  return Math.min(100, Math.max(0, score));
-}
-
 function calcOpportunity(
   difficulty: number,
   intent: string,
   clusterSize: number
 ): number {
-  const intentBonus = (intent === "commercial_investigation" || intent === "transactional") ? 15 : 0;
+  const intentBonus = (intent === "commercial" || intent === "transactional") ? 15 : 0;
   const sizeBonus   = Math.min(10, (clusterSize - 1) * 3);
   return Math.min(100, Math.max(0, (100 - difficulty) * 0.75 + intentBonus + sizeBonus));
 }
@@ -426,7 +282,7 @@ function calcBusinessRelevance(
   const overlap = kwWords.filter((w) => nicheWords.has(w)).length;
   const ratio   = nicheWords.size > 0 ? overlap / nicheWords.size : 0;
   let score     = Math.min(100, ratio * 60 + 30);
-  if (intent === "commercial_investigation" || intent === "transactional") score = Math.min(100, score + 15);
+  if (intent === "commercial" || intent === "transactional") score = Math.min(100, score + 15);
   if (opportunity > 70) score = Math.min(100, score + 10);
   score = Math.min(100, score + Math.min(5, secondary.length));
   return Math.round(score);
@@ -506,21 +362,31 @@ serve(async (req) => {
     const clusters = clusterKeywords(keywords);
     console.log(`[serp-layer] ${keywords.length} keywords → ${clusters.length} clusters`);
 
-    // ── Module 3: Fetch SERP per cluster head (rate-limited at 600ms) ────────
+    // ── Module 3: Fetch SERP per cluster head (batched, concurrency-limited) ─
+    // Previously fully serial (one request + fixed 600ms sleep at a time),
+    // which meant a 10-cluster job spent 6+ seconds just waiting. Batches of
+    // 3 concurrent requests, with a short pause between batches, still keeps
+    // SerpApi request pacing sane without paying for full serialization.
     type RawEntry = {
       cluster:  { head: string; members: string[] };
-      organic:  SerpResult[];
+      organic:  SerpOrganicResult[];
       features: Record<string, boolean>;
       adsCount: number;
       paa:      string[];
     };
 
+    const SERP_CONCURRENCY = 3;
     const entries: RawEntry[] = [];
-    for (let i = 0; i < clusters.length; i++) {
-      console.log(`[serp-layer] SERP → "${clusters[i].head}"`);
-      const serp = await fetchSerp(clusters[i].head, SERP_KEY, country, language);
-      entries.push({ cluster: clusters[i], ...serp });
-      if (i < clusters.length - 1) await new Promise((r) => setTimeout(r, 600));
+    for (let i = 0; i < clusters.length; i += SERP_CONCURRENCY) {
+      const batch = clusters.slice(i, i + SERP_CONCURRENCY);
+      console.log(`[serp-layer] SERP batch → ${batch.map((c) => c.head).join(", ")}`);
+      const results = await Promise.all(
+        batch.map((c) => searchSerp(c.head, SERP_KEY, { country, language, retries: 1 }))
+      );
+      batch.forEach((c, idx) =>
+        entries.push({ cluster: c, ...results[idx] })
+      );
+      if (i + SERP_CONCURRENCY < clusters.length) await new Promise((r) => setTimeout(r, 400));
     }
 
     // ── Module 4: Scrape top 3 per cluster (cap: 9 total) ───────────────────
@@ -535,11 +401,13 @@ serve(async (req) => {
     const pagesByCluster = new Map<number, string[]>();
     if (FIRECRAWL_KEY && jobs.length > 0) {
       console.log(`[serp-layer] Scraping ${jobs.length} pages`);
-      const scraped = await Promise.all(jobs.map((j) => extractPage(j.url, FIRECRAWL_KEY)));
+      const scraped = await Promise.all(
+        jobs.map((j) => scrapePage(j.url, FIRECRAWL_KEY, { maxChars: 4000, timeoutMs: 9000, retries: 1 }))
+      );
       for (let i = 0; i < jobs.length; i++) {
         const { ci } = jobs[i];
         if (!pagesByCluster.has(ci)) pagesByCluster.set(ci, []);
-        if (scraped[i]) pagesByCluster.get(ci)!.push(scraped[i]);
+        if (scraped[i].markdown) pagesByCluster.get(ci)!.push(scraped[i].markdown);
       }
     }
 
@@ -568,7 +436,7 @@ serve(async (req) => {
 
     const metas: ClusterMeta[] = entries.map(({ cluster, organic, features, adsCount, paa }, ci) => {
       const { intent, confidence } = classifyIntent(cluster.head, features, adsCount);
-      const difficulty   = calcDifficultyProxy(organic, features, adsCount);
+      const { score: difficulty } = calculateDifficulty(organic, features, adsCount);
       const opportunity  = calcOpportunity(difficulty, intent, cluster.members.length);
       const secondary    = cluster.members.filter((m) => m !== cluster.head);
       const relevance    = calcBusinessRelevance(cluster.head, secondary, niche, intent, opportunity);
