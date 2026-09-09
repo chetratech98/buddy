@@ -62,7 +62,7 @@ const Billing = () => {
   const [openingPortal, setOpeningPortal] = useState(false);
   const [currentPlan, setCurrentPlan] = useState<string>('free');
   const [subscriptionStatus, setSubscriptionStatus] = useState<string>('active');
-  const [quotaInfo, setQuotaInfo] = useState({ used: 0, total: 15 });
+  const [quotaInfo, setQuotaInfo] = useState({ used: 0, total: 30 });
   const [billingInterval, setBillingInterval] = useState<'month' | 'year'>('month');
 
   const sessionResult = searchParams.get('session');
@@ -81,7 +81,7 @@ const Billing = () => {
         setSubscriptionStatus(data.subscription_status || 'active');
         setQuotaInfo({
           used: data.posts_used_this_month || 0,
-          total: data.posts_quota_monthly || 15,
+          total: data.posts_quota_monthly || 30,
         });
       }
     } catch (error) {

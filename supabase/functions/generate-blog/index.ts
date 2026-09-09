@@ -187,7 +187,7 @@ serve(async (req) => {
 
     if (!quotaError && quotaProfile) {
       const used = quotaProfile.posts_used_this_month ?? 0;
-      const quota = quotaProfile.posts_quota_monthly ?? 15;
+      const quota = quotaProfile.posts_quota_monthly ?? 30;
       if (used >= quota) {
         return jsonResponse({
           error: "quota_exceeded",

@@ -160,14 +160,20 @@ export type Database = {
           avatar_url: string | null
           created_at: string
           display_name: string | null
+          icp: string | null
           id: string
           keywords: string[] | null
+          main_cta: string | null
           medium_author_id: string | null
           medium_integration_token: string | null
           niche: string | null
+          offers: string[]
           org_goals: string | null
           org_vision: string | null
+          regions: string[]
           role: string
+          top_services: string[]
+          trust_assets: string[]
           updated_at: string
           user_id: string
           website_url: string | null
@@ -179,14 +185,20 @@ export type Database = {
           avatar_url?: string | null
           created_at?: string
           display_name?: string | null
+          icp?: string | null
           id?: string
           keywords?: string[] | null
+          main_cta?: string | null
           medium_author_id?: string | null
           medium_integration_token?: string | null
           niche?: string | null
+          offers?: string[]
           org_goals?: string | null
           org_vision?: string | null
+          regions?: string[]
           role?: string
+          top_services?: string[]
+          trust_assets?: string[]
           updated_at?: string
           user_id: string
           website_url?: string | null
@@ -198,14 +210,20 @@ export type Database = {
           avatar_url?: string | null
           created_at?: string
           display_name?: string | null
+          icp?: string | null
           id?: string
           keywords?: string[] | null
+          main_cta?: string | null
           medium_author_id?: string | null
           medium_integration_token?: string | null
           niche?: string | null
+          offers?: string[]
           org_goals?: string | null
           org_vision?: string | null
+          regions?: string[]
           role?: string
+          top_services?: string[]
+          trust_assets?: string[]
           updated_at?: string
           user_id?: string
           website_url?: string | null

@@ -395,7 +395,7 @@ const Admin = () => {
                             </Badge>
                           </TableCell>
                           <TableCell>{profile.posts_used_this_month || 0}</TableCell>
-                          <TableCell>{profile.posts_quota_monthly || 15}</TableCell>
+                          <TableCell>{profile.posts_quota_monthly || 30}</TableCell>
                           <TableCell>
                             {profile.wp_url ? (
                               <Badge variant="outline" className="text-green-400 border-green-400">Connected</Badge>

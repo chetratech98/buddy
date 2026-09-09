@@ -67,6 +67,14 @@ interface ExtractedAnalysis {
   topicClusters: ExtractedCluster[];
   competitorKeywordGaps: string[];
   idealCustomerProfiles: ExtractedICP[];
+  // Business onboarding fields — auto-extracted from the site itself,
+  // shown pre-filled on the Analyze Site page and editable there.
+  primaryICP: string;
+  offers: string[];
+  regions: string[];
+  topServices: string[];
+  mainCta: string;
+  trustAssets: string[];
 }
 
 function str(v: unknown, fallback = ""): string {
@@ -196,6 +204,12 @@ function extractAnalysis(rawContent: string): ExtractedAnalysis {
     idealCustomerProfiles: Array.isArray(parsed.idealCustomerProfiles)
       ? parsed.idealCustomerProfiles.map(extractICP).filter((p): p is ExtractedICP => p !== null).slice(0, 5)
       : [],
+    primaryICP: str(parsed.primaryICP),
+    offers: strArray(parsed.offers, 8),
+    regions: strArray(parsed.regions, 8),
+    topServices: strArray(parsed.topServices, 8),
+    mainCta: str(parsed.mainCta),
+    trustAssets: strArray(parsed.trustAssets, 8),
   };
 }
 
@@ -374,7 +388,13 @@ Analyze the website and return a JSON object with this exact structure:
       "buyingTriggers": ["1-3 events or moments that push this persona to look for a solution"],
       "preferredChannels": ["1-3 channels where this persona discovers content or products, e.g. 'LinkedIn', 'Google Search', 'Reddit communities'"]
     }
-  ]
+  ],
+  "primaryICP": "1-2 sentence description of the single most important ideal customer for this business — a plain-English summary, not a persona breakdown",
+  "offers": ["3-6 specific offers, packages, products, or pricing plans found or implied on the site — empty array if genuinely none are identifiable"],
+  "regions": ["Geographic regions/markets this business appears to serve, at city/state/country level — empty array if the site gives no geographic signal"],
+  "topServices": ["3-6 top services or products this business provides, most prominent first"],
+  "mainCta": "The single primary call-to-action this business wants a visitor to take, e.g. 'Book a Free Demo' or 'Start Free Trial' — infer from buttons/headings if not stated outright",
+  "trustAssets": ["Trust signals found on the site: certifications, awards, client/customer counts, ratings, notable clients, press mentions — empty array if none found"]
 }
 
 Requirements:
@@ -384,7 +404,8 @@ Requirements:
 - Keywords must be specific to this business, not generic industry terms
 - Difficulty should reflect real competitiveness (most keywords for smaller sites should be low-medium)
 - Priority should consider business impact and ranking feasibility
-- Provide EXACTLY 5 distinct Ideal Customer Profiles (idealCustomerProfiles), each representing a genuinely different buyer segment for this specific business — not 5 minor variations of the same persona`;
+- Provide EXACTLY 5 distinct Ideal Customer Profiles (idealCustomerProfiles), each representing a genuinely different buyer segment for this specific business — not 5 minor variations of the same persona
+- For primaryICP, offers, regions, topServices, mainCta, and trustAssets: extract only what the page content actually supports. Do not invent specifics (like fake certifications or made-up regions) — return an empty array/string for anything not genuinely evidenced by the scraped content`;
 
     const aiResp = await fetch(
       "https://api.openai.com/v1/chat/completions",

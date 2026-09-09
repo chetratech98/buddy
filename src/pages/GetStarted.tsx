@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Globe, Sparkles, Loader2, Tag, TrendingUp, Target, Layers, AlertTriangle, Search, ArrowRight, Pencil, Check, X, Plus, Users, Radar, Flame } from "lucide-react";
+import { Globe, Sparkles, Loader2, Tag, TrendingUp, Target, Layers, AlertTriangle, Search, ArrowRight, Pencil, Check, X, Plus, Users, Radar, Flame, Briefcase } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -56,7 +57,32 @@ interface AnalysisResult {
   idealCustomerProfiles?: IdealCustomerProfile[];
   flatKeywords?: string[];
   flatLongTail?: string[];
+  // Business onboarding fields, auto-extracted from the site
+  primaryICP?: string;
+  offers?: string[];
+  regions?: string[];
+  topServices?: string[];
+  mainCta?: string;
+  trustAssets?: string[];
 }
+
+interface BusinessProfile {
+  icp: string;
+  offers: string[];
+  regions: string[];
+  topServices: string[];
+  mainCta: string;
+  trustAssets: string[];
+}
+
+const emptyBusinessProfile: BusinessProfile = {
+  icp: "",
+  offers: [],
+  regions: [],
+  topServices: [],
+  mainCta: "",
+  trustAssets: [],
+};
 
 const intentColors: Record<string, string> = {
   informational: "bg-chart-1/15 text-chart-1 border-chart-1/30",
@@ -77,6 +103,72 @@ const priorityColors: Record<string, string> = {
   low: "bg-muted text-muted-foreground border-border",
 };
 
+interface TagListFieldProps {
+  label: string;
+  values: string[];
+  onChange: (values: string[]) => void;
+  placeholder?: string;
+}
+
+const TagListField = ({ label, values, onChange, placeholder }: TagListFieldProps) => {
+  const [draft, setDraft] = useState("");
+
+  const add = () => {
+    const v = draft.trim();
+    if (v && !values.includes(v)) {
+      onChange([...values, v]);
+      setDraft("");
+    }
+  };
+
+  const remove = (idx: number) => onChange(values.filter((_, i) => i !== idx));
+
+  return (
+    <div>
+      <label className="text-xs font-medium text-muted-foreground mb-1 block">{label}</label>
+      {values.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {values.map((v, i) => (
+            <Badge key={i} variant="secondary" className="text-xs flex items-center gap-1">
+              {v}
+              <button onClick={() => remove(i)} className="hover:text-destructive">
+                <X size={10} />
+              </button>
+            </Badge>
+          ))}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <Input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), add())}
+          placeholder={placeholder}
+          className="text-sm flex-1"
+        />
+        <button onClick={add} className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:bg-muted transition-colors flex items-center gap-1">
+          <Plus size={12} /> Add
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const ReadOnlyTagRow = ({ label, values }: { label: string; values: string[] }) => (
+  <div>
+    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</span>
+    {values.length > 0 ? (
+      <div className="flex flex-wrap gap-2 mt-1.5">
+        {values.map((v, i) => (
+          <Badge key={i} variant="outline" className="text-xs">{v}</Badge>
+        ))}
+      </div>
+    ) : (
+      <p className="text-sm text-muted-foreground mt-1">Not set</p>
+    )}
+  </div>
+);
+
 const GetStarted = () => {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
@@ -92,6 +184,12 @@ const GetStarted = () => {
   const [editKeywords, setEditKeywords] = useState<string[]>([]);
   const [newKeyword, setNewKeyword] = useState("");
   const [savingNiche, setSavingNiche] = useState(false);
+
+  // Onboarding: business profile (ICP, offers, regions, top services, main CTA, trust assets)
+  const [businessProfile, setBusinessProfile] = useState<BusinessProfile>(emptyBusinessProfile);
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [editProfile, setEditProfile] = useState<BusinessProfile>(emptyBusinessProfile);
+  const [savingProfile, setSavingProfile] = useState(false);
 
   const startNicheEdit = () => {
     setEditNiche(result?.niche || "");
@@ -138,6 +236,65 @@ const GetStarted = () => {
     setEditingNiche(false);
     setResult(updatedResult);
   }, [user, editNiche, editKeywords, toast, result]);
+
+  const startProfileEdit = () => {
+    setEditProfile(businessProfile);
+    setEditingProfile(true);
+  };
+
+  const cancelProfileEdit = () => setEditingProfile(false);
+
+  const saveProfileEdit = useCallback(async () => {
+    if (!user) return;
+
+    setSavingProfile(true);
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        icp: editProfile.icp,
+        offers: editProfile.offers,
+        regions: editProfile.regions,
+        top_services: editProfile.topServices,
+        main_cta: editProfile.mainCta,
+        trust_assets: editProfile.trustAssets,
+      } as any)
+      .eq("user_id", user.id);
+
+    if (error) {
+      toast({ title: "Error saving", description: error.message, variant: "destructive" });
+      setSavingProfile(false);
+      return;
+    }
+
+    setSavingProfile(false);
+    toast({ title: "Business profile saved" });
+    setEditingProfile(false);
+    setBusinessProfile(editProfile);
+  }, [user, editProfile, toast]);
+
+  // Load the onboarding business profile — independent of the AI site
+  // analysis result, so it's always available on this page.
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from("profiles")
+      .select("icp, offers, regions, top_services, main_cta, trust_assets")
+      .eq("user_id", user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) {
+          setBusinessProfile({
+            icp: data.icp || "",
+            offers: data.offers || [],
+            regions: data.regions || [],
+            topServices: data.top_services || [],
+            mainCta: data.main_cta || "",
+            trustAssets: data.trust_assets || [],
+          });
+        }
+      });
+  }, [user]);
+
   useEffect(() => {
     // First: try sessionStorage for the full enriched result (from the current session)
     const cached = sessionStorage.getItem("siteAnalysis");
@@ -226,6 +383,38 @@ const GetStarted = () => {
             setSaved(true);
             toast({ title: "Analysis saved", description: "Your niche and keywords have been saved." });
           }
+
+          // Pre-fill the business profile from what was auto-extracted — but
+          // never clobber a field the user already filled in manually. Saved
+          // as a separate update so it can't take down the save above.
+          const mergedProfile: BusinessProfile = {
+            icp: businessProfile.icp || (data.data.primaryICP || ""),
+            offers: businessProfile.offers.length ? businessProfile.offers : (data.data.offers || []),
+            regions: businessProfile.regions.length ? businessProfile.regions : (data.data.regions || []),
+            topServices: businessProfile.topServices.length ? businessProfile.topServices : (data.data.topServices || []),
+            mainCta: businessProfile.mainCta || (data.data.mainCta || ""),
+            trustAssets: businessProfile.trustAssets.length ? businessProfile.trustAssets : (data.data.trustAssets || []),
+          };
+
+          const { error: profileErr } = await supabase
+            .from("profiles")
+            .update({
+              icp: mergedProfile.icp,
+              offers: mergedProfile.offers,
+              regions: mergedProfile.regions,
+              top_services: mergedProfile.topServices,
+              main_cta: mergedProfile.mainCta,
+              trust_assets: mergedProfile.trustAssets,
+            } as any)
+            .eq("user_id", user.id);
+
+          // Show the extraction immediately regardless of persistence —
+          // if the save failed (e.g. a pending migration), the values are
+          // still visible here and can be saved manually once it's applied.
+          setBusinessProfile(mergedProfile);
+          if (profileErr) {
+            console.error("Failed to save extracted business profile:", profileErr.message);
+          }
         } else {
           toast({ title: "Analysis complete", description: "Next step unlocked. Continue to SERP Analysis." });
         }
@@ -284,6 +473,98 @@ const GetStarted = () => {
             </Button>
           </div>
 
+          {/* Business Profile onboarding */}
+          {user && (
+            <Card className="border-border mb-10">
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <Briefcase size={18} className="text-primary" />
+                    <span className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Business Profile</span>
+                  </div>
+                  {!editingProfile && (
+                    <button onClick={startProfileEdit} className="text-xs text-primary hover:underline flex items-center gap-1">
+                      <Pencil size={12} /> Edit
+                    </button>
+                  )}
+                </div>
+
+                {editingProfile ? (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-xs font-medium text-muted-foreground mb-1 block">Ideal Customer Profile (ICP)</label>
+                      <Textarea
+                        value={editProfile.icp}
+                        onChange={(e) => setEditProfile({ ...editProfile, icp: e.target.value })}
+                        placeholder="Describe who your ideal customer is — role, company size, pain points…"
+                        className="text-sm"
+                        rows={3}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-medium text-muted-foreground mb-1 block">Main CTA</label>
+                      <Input
+                        value={editProfile.mainCta}
+                        onChange={(e) => setEditProfile({ ...editProfile, mainCta: e.target.value })}
+                        placeholder="e.g., Book a Free Demo"
+                        className="text-sm"
+                      />
+                    </div>
+
+                    <TagListField
+                      label="Offers"
+                      values={editProfile.offers}
+                      onChange={(v) => setEditProfile({ ...editProfile, offers: v })}
+                      placeholder="Add an offer…"
+                    />
+                    <TagListField
+                      label="Regions Served"
+                      values={editProfile.regions}
+                      onChange={(v) => setEditProfile({ ...editProfile, regions: v })}
+                      placeholder="Add a region…"
+                    />
+                    <TagListField
+                      label="Top Services"
+                      values={editProfile.topServices}
+                      onChange={(v) => setEditProfile({ ...editProfile, topServices: v })}
+                      placeholder="Add a service…"
+                    />
+                    <TagListField
+                      label="Trust Assets"
+                      values={editProfile.trustAssets}
+                      onChange={(v) => setEditProfile({ ...editProfile, trustAssets: v })}
+                      placeholder="e.g., ISO 27001 certified, 500+ 5-star reviews…"
+                    />
+
+                    <div className="flex gap-2 justify-end">
+                      <button onClick={cancelProfileEdit} className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:bg-muted transition-colors flex items-center gap-1">
+                        <X size={12} /> Cancel
+                      </button>
+                      <button onClick={saveProfileEdit} disabled={savingProfile} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-opacity flex items-center gap-1 disabled:opacity-50">
+                        <Check size={12} /> {savingProfile ? "Saving..." : "Save"}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div>
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Ideal Customer Profile (ICP)</span>
+                      <p className="text-sm text-foreground/80 mt-1 leading-relaxed">{businessProfile.icp || "Not set"}</p>
+                    </div>
+                    <div>
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Main CTA</span>
+                      <p className="text-sm text-foreground/80 mt-1">{businessProfile.mainCta || "Not set"}</p>
+                    </div>
+                    <ReadOnlyTagRow label="Offers" values={businessProfile.offers} />
+                    <ReadOnlyTagRow label="Regions Served" values={businessProfile.regions} />
+                    <ReadOnlyTagRow label="Top Services" values={businessProfile.topServices} />
+                    <ReadOnlyTagRow label="Trust Assets" values={businessProfile.trustAssets} />
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Results */}
           {result && (
