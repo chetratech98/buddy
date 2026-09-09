@@ -955,6 +955,23 @@ const GetStarted = () => {
           )}
 
           {result && (
+            <Card className="border-border mt-8">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <Briefcase size={18} className="text-primary" />
+                  <span className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Extracted from Crawled Pages</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <ReadOnlyTagRow label="Offers" values={businessProfile.offers.slice(0, 4)} />
+                  <ReadOnlyTagRow label="Regions Served" values={businessProfile.regions.slice(0, 4)} />
+                  <ReadOnlyTagRow label="Top Services" values={businessProfile.topServices.slice(0, 4)} />
+                  <ReadOnlyTagRow label="Trust Assets" values={businessProfile.trustAssets.slice(0, 4)} />
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {result && (
             <div className="mt-8 flex justify-end">
               <Button
                 onClick={() => navigate("/seo-analysis")}

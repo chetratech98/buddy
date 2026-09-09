@@ -275,6 +275,53 @@ serve(async (req) => {
       }
     }
 
+    // --- Step 1b: Crawl key pages on the client's own site ─────────────────
+    // The homepage alone rarely has enough signal for offers/regions/services/
+    // trust assets — pull in whichever of these standard pages the site
+    // actually has, scraped in parallel from the internal links just found.
+    const crawledPages: Array<{ label: string; url: string; markdown: string }> = [];
+
+    if (FIRECRAWL_API_KEY && links.length > 0) {
+      const KEY_PAGE_PATTERNS: Record<string, RegExp> = {
+        About: /\/(about(-us)?|who-we-are|our-story|company)(\/|$|\?)/i,
+        Services: /\/(services|what-we-do|solutions|products)(\/|$|\?)/i,
+        Locations: /\/(locations?|service-areas?|areas-we-serve|where-we-serve|coverage)(\/|$|\?)/i,
+        Testimonials: /\/(testimonials?|reviews|client-reviews)(\/|$|\?)/i,
+        "Case Studies": /\/(case-studies?|portfolio|success-stories|projects)(\/|$|\?)/i,
+        Contact: /\/(contact(-us)?|get-in-touch)(\/|$|\?)/i,
+      };
+
+      const internalLinksForCrawl = links.filter((l) => {
+        try { return new URL(l).hostname === parsedUrl.hostname; } catch { return false; }
+      });
+
+      const keyPageTargets: Array<{ label: string; url: string }> = [];
+      for (const [label, pattern] of Object.entries(KEY_PAGE_PATTERNS)) {
+        const match = internalLinksForCrawl.find((l) => {
+          try { return pattern.test(new URL(l).pathname); } catch { return false; }
+        });
+        if (match) keyPageTargets.push({ label, url: match });
+      }
+
+      if (keyPageTargets.length > 0) {
+        console.log(`[analyze-site] Crawling ${keyPageTargets.length} key page(s): ${keyPageTargets.map(t => t.label).join(", ")}`);
+        const scrapedKeyPages = await Promise.all(
+          keyPageTargets.map((t) =>
+            scrapePage(t.url, FIRECRAWL_API_KEY, {
+              formats: ["markdown"],
+              onlyMainContent: true,
+              waitFor: 1500,
+              maxChars: 2500,
+              timeoutMs: 8000,
+              retries: 0,
+            }).then((scraped) => ({ label: t.label, url: t.url, markdown: scraped.markdown }))
+          )
+        );
+        crawledPages.push(...scrapedKeyPages.filter((p) => p.markdown));
+        console.log(`[analyze-site] Successfully crawled ${crawledPages.length}/${keyPageTargets.length} key page(s)`);
+      }
+    }
+
     // Fallback to basic fetch if Firecrawl didn't work
     if (!pageContent) {
       try {
@@ -331,7 +378,13 @@ serve(async (req) => {
         contextSections.push(`Sample internal link paths:\n${internalLinks.slice(0, 15).map(l => `- ${new URL(l).pathname}`).join("\n")}`);
       }
     }
-    if (pageContent) contextSections.push(`Page Content:\n${pageContent}`);
+    if (pageContent) contextSections.push(`Home Page Content:\n${pageContent}`);
+    for (const page of crawledPages) {
+      contextSections.push(`${page.label} Page Content (${page.url}):\n${page.markdown}`);
+    }
+    if (crawledPages.length > 0) {
+      contextSections.push(`Additional pages crawled: ${crawledPages.map(p => p.label).join(", ")}`);
+    }
 
     const systemPrompt = `You are a senior SEO strategist with 15+ years of experience in keyword research, competitive analysis, and content strategy. You follow methodologies from Ahrefs, SEMrush, and Moz.
 
@@ -405,7 +458,8 @@ Requirements:
 - Difficulty should reflect real competitiveness (most keywords for smaller sites should be low-medium)
 - Priority should consider business impact and ranking feasibility
 - Provide EXACTLY 5 distinct Ideal Customer Profiles (idealCustomerProfiles), each representing a genuinely different buyer segment for this specific business — not 5 minor variations of the same persona
-- For primaryICP, offers, regions, topServices, mainCta, and trustAssets: extract only what the page content actually supports. Do not invent specifics (like fake certifications or made-up regions) — return an empty array/string for anything not genuinely evidenced by the scraped content`;
+- For primaryICP, offers, regions, topServices, mainCta, and trustAssets: extract only what the page content actually supports. Do not invent specifics (like fake certifications or made-up regions) — return an empty array/string for anything not genuinely evidenced by the scraped content
+- If Services/Locations/Testimonials/Case Studies/Contact/About pages were crawled (see labeled sections above), prioritize them over the home page for the fields they naturally inform: Services page → topServices/offers, Locations page → regions, Testimonials/Case Studies pages → trustAssets, Contact page → mainCta, About page → description/primaryICP`;
 
     const aiResp = await fetch(
       "https://api.openai.com/v1/chat/completions",
