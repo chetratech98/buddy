@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { searchSerp, scrapePage } from "../_shared/scraping.ts";
-import { scoreContent } from "../_shared/seo-scorer.ts";
+import { scoreContent, countWords } from "../_shared/seo-scorer.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,18 +11,12 @@ const corsHeaders = {
   "Access-Control-Max-Age": "86400",
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helper: count words in markdown text
-// ─────────────────────────────────────────────────────────────────────────────
-function countWords(text: string): number {
-  return text
-    .replace(/```[\s\S]*?```/g, "") // strip code blocks
-    .replace(/`[^`]+`/g, "")        // strip inline code
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // strip links, keep text
-    .replace(/[#*_~>|]/g, " ")
-    .split(/\s+/)
-    .filter((w) => w.length > 0).length;
-}
+// countWords is now imported from _shared/seo-scorer.ts — it used to be a
+// looser local implementation (kept short words, counted markdown symbols
+// as boundaries) that could read ~15-20% higher than what the scorer
+// actually measures, so "hit the target" didn't reliably mean "scores well
+// on word count". Using the scorer's own counter for enforcement closes
+// that gap.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: fetch top competitor URLs from SerpApi
@@ -206,11 +200,15 @@ serve(async (req) => {
     const topic    = typeof body.topic    === "string" ? body.topic.trim().slice(0, 1000)   : "";
     const keywords = typeof body.keywords === "string" ? body.keywords.trim().slice(0, 500) : "";
     const tone     = typeof body.tone     === "string" ? body.tone.trim().slice(0, 50)      : "professional";
-    // 2200 words clears the scorer's "Good" tier (2,000+) comfortably even
-    // after minor trimming in the QA pass — 1,500 only cleared "Acceptable".
+    // 2500 here (what we ask the AI to aim for) vs. the scorer's actual
+    // count of the result: the scorer's counter is stricter than a naive
+    // whitespace split (drops short words, markdown syntax), so real
+    // generated content measures ~15-20% lower than what the model thinks
+    // it wrote. Asking for 2,500 reliably lands in the scorer's 2,000+
+    // "Good" tier instead of landing just short of it at a lower target.
     const targetWordCount = typeof body.targetWordCount === "number" && body.targetWordCount >= 500 && body.targetWordCount <= 5000
       ? body.targetWordCount
-      : 2200;
+      : 2500;
     const template          = body.template ?? null;
     const contentType       = typeof body.contentType === "string" ? body.contentType.trim() : "blog";
     const contentPlanBrief  = typeof body.contentPlanBrief === "string" ? body.contentPlanBrief.trim().slice(0, 1000) : "";

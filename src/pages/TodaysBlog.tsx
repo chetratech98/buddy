@@ -61,7 +61,7 @@ const TodaysBlog = () => {
   const [previewMode, setPreviewMode] = useState(false);
   const [alreadyPostedToday, setAlreadyPostedToday] = useState(false);
   const [tone, setTone] = useState("professional");
-  const [targetWordCount, setTargetWordCount] = useState(2200);
+  const [targetWordCount, setTargetWordCount] = useState(2500);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [niche, setNiche] = useState("");
 

@@ -172,7 +172,7 @@ serve(async (req) => {
             topic: todayItem.title,
             keywords: [todayItem.keyword, todayItem.long_tail_keyword].filter(Boolean).join(", "),
             tone: plan.tone || "professional",
-            targetWordCount: 2200,
+            targetWordCount: 2500,
             contentType: todayItem.type,
             contentPlanBrief: todayItem.description || "",
             niche: plan.niche || "",

@@ -44,7 +44,10 @@ function tokenize(text: string): string[] {
   return stripMarkdown(text).toLowerCase().split(/\W+/).filter((w) => w.length > 2);
 }
 
-function countWords(text: string): number {
+// Exported so callers that need to enforce a word-count target (e.g.
+// generate-blog's expansion pass) count words the exact same way this
+// scorer does — otherwise "hit the target" and "scores well" can diverge.
+export function countWords(text: string): number {
   return tokenize(text).length;
 }
 
