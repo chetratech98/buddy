@@ -118,7 +118,7 @@ const OrgSwitcher = () => {
 const Navbar = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -186,10 +186,6 @@ const Navbar = () => {
                 <button onClick={() => navigate("/profile")}
                   className="text-sm font-medium text-muted-foreground hover:text-foreground px-3.5 py-2 rounded-lg hover:bg-secondary/80 transition-all duration-150">
                   Profile
-                </button>
-                <button onClick={() => signOut()}
-                  className="text-sm font-medium text-muted-foreground hover:text-foreground px-3.5 py-2 rounded-lg hover:bg-secondary/80 transition-all duration-150">
-                  Sign Out
                 </button>
               </>
             ) : (
@@ -298,10 +294,6 @@ const Navbar = () => {
                     <button onClick={() => { navigate("/profile"); setMobileOpen(false); }}
                       className="w-full text-sm font-medium text-muted-foreground hover:text-foreground text-left px-4 py-3 rounded-xl hover:bg-secondary/80 transition-all">
                       Profile
-                    </button>
-                    <button onClick={() => { signOut(); setMobileOpen(false); }}
-                      className="w-full text-sm font-semibold text-destructive hover:bg-destructive/8 text-left px-4 py-3 rounded-xl transition-all">
-                      Sign Out
                     </button>
                   </>
                 ) : (

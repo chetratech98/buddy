@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Check, Loader2, CreditCard, TrendingUp, AlertCircle, ExternalLink, CheckCircle2 } from 'lucide-react';
+import { Check, Loader2, CreditCard, TrendingUp, AlertCircle, ExternalLink, CheckCircle2, LogOut } from 'lucide-react';
 
 interface Plan {
   id: string;
@@ -52,7 +52,7 @@ const discountPercent = (monthlyPrice: number, annualPrice: number) =>
   Math.round(((monthlyPrice * 12 - annualPrice) / (monthlyPrice * 12)) * 100);
 
 const Billing = () => {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -221,20 +221,30 @@ const Billing = () => {
                   <TrendingUp className="text-primary" />
                   Current Usage
                 </CardTitle>
-                {isPaidPlan && (
+                <div className="flex items-center gap-2">
+                  {isPaidPlan && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleManageBilling}
+                      disabled={openingPortal}
+                    >
+                      {openingPortal ? (
+                        <><Loader2 className="animate-spin mr-2" size={14} />Opening...</>
+                      ) : (
+                        <><CreditCard size={14} className="mr-2" />Manage Billing</>
+                      )}
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={handleManageBilling}
-                    disabled={openingPortal}
+                    onClick={async () => { await signOut(); navigate('/'); }}
+                    className="text-destructive border-destructive/30 hover:bg-destructive/5"
                   >
-                    {openingPortal ? (
-                      <><Loader2 className="animate-spin mr-2" size={14} />Opening...</>
-                    ) : (
-                      <><CreditCard size={14} className="mr-2" />Manage Billing</>
-                    )}
+                    <LogOut size={14} className="mr-2" />Sign Out
                   </Button>
-                )}
+                </div>
               </div>
               <CardDescription>
                 You are on the{' '}
