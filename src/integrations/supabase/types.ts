@@ -158,8 +158,12 @@ export type Database = {
       profiles: {
         Row: {
           avatar_url: string | null
+          brand_voice: string | null
+          business_model: string | null
           created_at: string
+          differentiators: string[]
           display_name: string | null
+          founded_year: string | null
           icp: string | null
           id: string
           keywords: string[] | null
@@ -172,10 +176,12 @@ export type Database = {
           org_vision: string | null
           regions: string[]
           role: string
+          team_expertise: string[]
           top_services: string[]
           trust_assets: string[]
           updated_at: string
           user_id: string
+          value_proposition: string | null
           website_url: string | null
           wp_app_password: string | null
           wp_url: string | null
@@ -183,8 +189,12 @@ export type Database = {
         }
         Insert: {
           avatar_url?: string | null
+          brand_voice?: string | null
+          business_model?: string | null
           created_at?: string
+          differentiators?: string[]
           display_name?: string | null
+          founded_year?: string | null
           icp?: string | null
           id?: string
           keywords?: string[] | null
@@ -197,10 +207,12 @@ export type Database = {
           org_vision?: string | null
           regions?: string[]
           role?: string
+          team_expertise?: string[]
           top_services?: string[]
           trust_assets?: string[]
           updated_at?: string
           user_id: string
+          value_proposition?: string | null
           website_url?: string | null
           wp_app_password?: string | null
           wp_url?: string | null
@@ -208,8 +220,12 @@ export type Database = {
         }
         Update: {
           avatar_url?: string | null
+          brand_voice?: string | null
+          business_model?: string | null
           created_at?: string
+          differentiators?: string[]
           display_name?: string | null
+          founded_year?: string | null
           icp?: string | null
           id?: string
           keywords?: string[] | null
@@ -222,10 +238,12 @@ export type Database = {
           org_vision?: string | null
           regions?: string[]
           role?: string
+          team_expertise?: string[]
           top_services?: string[]
           trust_assets?: string[]
           updated_at?: string
           user_id?: string
+          value_proposition?: string | null
           website_url?: string | null
           wp_app_password?: string | null
           wp_url?: string | null

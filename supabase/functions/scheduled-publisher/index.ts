@@ -196,6 +196,9 @@ serve(async (req) => {
         .single();
 
       const platformStatus: Record<string, unknown> = { ...(post.platform_status ?? {}) };
+      // Prefer the WordPress URL as canonical (primary self-hosted site);
+      // falls back to Medium's URL if only that platform is published to.
+      let canonicalUrl: string | undefined;
 
       // Step 3: WordPress
       if (post.platform_wordpress && profile) {
@@ -211,6 +214,7 @@ serve(async (req) => {
             wordpressUrl,
           };
           platformResults.wordpress = { status: "success", url: wordpressUrl };
+          canonicalUrl = wordpressUrl;
 
           await admin.from("publishing_logs").insert({
             post_id:       post.id,
@@ -246,6 +250,7 @@ serve(async (req) => {
             mediumUrl,
           };
           platformResults.medium = { status: "success", url: mediumUrl };
+          canonicalUrl ??= mediumUrl;
 
           await admin.from("publishing_logs").insert({
             post_id:       post.id,
@@ -267,11 +272,14 @@ serve(async (req) => {
         }
       }
 
-      // Step 5: Persist platform_status back to the post
-      if (Object.keys(platformStatus).length > 0) {
+      // Step 5: Persist platform_status (and canonical_url, if we got one) back to the post
+      if (Object.keys(platformStatus).length > 0 || canonicalUrl) {
         await admin
           .from("blog_posts")
-          .update({ platform_status: platformStatus })
+          .update({
+            platform_status: platformStatus,
+            ...(canonicalUrl && { canonical_url: canonicalUrl }),
+          })
           .eq("id", post.id);
       }
 

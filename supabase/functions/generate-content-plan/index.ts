@@ -197,6 +197,47 @@ serve(async (req) => {
     const orgVision = typeof body.orgVision === "string" ? body.orgVision.trim().slice(0, 1000) : "";
     const contentIntelligence = body.contentIntelligence || null;
 
+    // Business context from the Analyze Site page — optional, defensively
+    // coerced since it comes from client-controlled sessionStorage/DB state.
+    const ctx = (body.businessContext && typeof body.businessContext === "object") ? body.businessContext : {};
+    const ctxStr = (v: unknown, max = 400) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : "");
+    const ctxArr = (v: unknown, max = 8) =>
+      Array.isArray(v) ? v.filter((x) => typeof x === "string" && x.trim()).slice(0, max).map((s) => String(s).slice(0, 150)) : [];
+
+    const icp = ctxStr(ctx.icp, 500);
+    const mainCta = ctxStr(ctx.mainCta, 100);
+    const brandVoice = ctxStr(ctx.brandVoice, 60);
+    const businessModel = ctxStr(ctx.businessModel, 60);
+    const valueProposition = ctxStr(ctx.valueProposition);
+    const topServices = ctxArr(ctx.topServices);
+    const trustAssets = ctxArr(ctx.trustAssets);
+    const differentiators = ctxArr(ctx.differentiators);
+    const competitorKeywordGaps = ctxArr(ctx.competitorKeywordGaps, 10);
+    const topicClusters: Array<{ pillar: string; supporting: string[] }> = Array.isArray(ctx.topicClusters)
+      ? ctx.topicClusters
+          .filter((c: any) => c && typeof c.pillar === "string" && c.pillar.trim())
+          .slice(0, 6)
+          .map((c: any) => ({ pillar: c.pillar.trim().slice(0, 100), supporting: ctxArr(c.supporting, 5) }))
+      : [];
+    const idealCustomerProfiles: Array<{ name: string; role?: string; painPoints?: string[]; goals?: string[] }> = Array.isArray(ctx.idealCustomerProfiles)
+      ? ctx.idealCustomerProfiles
+          .filter((p: any) => p && typeof p.name === "string" && p.name.trim())
+          .slice(0, 5)
+          .map((p: any) => ({
+            name: p.name.trim().slice(0, 80),
+            role: ctxStr(p.role, 80),
+            painPoints: ctxArr(p.painPoints, 3),
+            goals: ctxArr(p.goals, 3),
+          }))
+      : [];
+
+    // Topics already covered by past-published/drafted posts — the AI must
+    // not repeat these, which matters most once a first 30-day cycle has
+    // already run and a new one is being generated.
+    const existingTopics: string[] = Array.isArray(body.existingTopics)
+      ? body.existingTopics.filter((t: unknown) => typeof t === "string" && t.trim()).slice(0, 150).map((t: string) => t.trim().slice(0, 150))
+      : [];
+
     if (!niche) return json({ error: "Niche is required" }, 400);
 
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
@@ -417,6 +458,43 @@ serve(async (req) => {
       ? `\n\n=== ORGANIZATION CONTEXT ===\n${orgGoals ? `Goals: ${orgGoals}\n` : ""}${orgVision ? `Vision: ${orgVision}\n` : ""}`
       : "";
 
+    // ── Business context (from Analyze Site) ─────────────────────────────────
+    const businessFacts: string[] = [];
+    if (businessModel) businessFacts.push(`Business model: ${businessModel}`);
+    if (valueProposition) businessFacts.push(`Value proposition: ${valueProposition}`);
+    if (icp) businessFacts.push(`Primary ideal customer: ${icp}`);
+    if (topServices.length) businessFacts.push(`Top services/offers: ${topServices.join("; ")}`);
+    if (differentiators.length) businessFacts.push(`Differentiators (weave these in naturally where relevant, don't force them into every post): ${differentiators.join("; ")}`);
+    if (trustAssets.length) businessFacts.push(`Trust signals available to cite: ${trustAssets.join("; ")}`);
+    if (mainCta) businessFacts.push(`Primary CTA this business wants readers to take: "${mainCta}" — bottom-of-funnel post types (case-study, comparison-style how-to) should naturally build toward this`);
+    const businessContext = businessFacts.length
+      ? `\n\n=== BUSINESS CONTEXT (from site analysis) ===\n${businessFacts.map(f => `- ${f}`).join("\n")}\nGround the ANGLE and OUTCOME sentences in what makes THIS business specifically worth reading, not generic advice any competitor could publish.`
+      : "";
+
+    // ── Ideal customer profiles → persona distribution ───────────────────────
+    const personaContext = idealCustomerProfiles.length
+      ? `\n\n=== IDEAL CUSTOMER PROFILES (distribute the ${days} posts across these) ===\n${idealCustomerProfiles.map((p, i) =>
+          `${i + 1}. ${p.name}${p.role ? ` (${p.role})` : ""}${p.painPoints?.length ? ` — pain points: ${p.painPoints.join(", ")}` : ""}${p.goals?.length ? ` — goals: ${p.goals.join(", ")}` : ""}`
+        ).join("\n")}\nEvery item MUST include an "audience_persona" field set to the exact name of one of the ${idealCustomerProfiles.length} personas above. Spread posts roughly evenly across all of them over the ${days} days — don't write the whole plan for just one persona.`
+      : `\n\nEvery item MUST include an "audience_persona" field — a short label for who the post is written for (e.g. "Beginners", "Small business owners"), since no formal ICPs were provided.`;
+
+    // ── Topic clusters → pillar/supporting structure ─────────────────────────
+    const pillarContext = topicClusters.length
+      ? `\n\n=== TOPIC CLUSTERS (use as the subject-matter backbone) ===\n${topicClusters.map(c =>
+          `- Pillar: "${c.pillar}"${c.supporting.length ? ` → supporting angles: ${c.supporting.join(", ")}` : ""}`
+        ).join("\n")}\nGroup posts under these pillars where the topic fits naturally — this builds topical authority and supports internal linking between pillar and supporting posts. Not every post needs to map to a cluster, but most should.`
+      : "";
+
+    // ── Competitor keyword gaps → explicit opportunities ─────────────────────
+    const gapsContext = competitorKeywordGaps.length
+      ? `\n\n=== COMPETITOR KEYWORD GAPS (proven opportunities — prioritize covering these) ===\n${competitorKeywordGaps.map(g => `- ${g}`).join("\n")}`
+      : "";
+
+    // ── Already-covered topics → hard duplicate avoidance ────────────────────
+    const existingTopicsContext = existingTopics.length
+      ? `\n\n=== ALREADY PUBLISHED/PLANNED — DO NOT REPEAT ===\nThis business has already covered these topics/keywords in past content. Every new title, keyword, and long_tail_keyword in this plan MUST be meaningfully different from all of these — do not rephrase or lightly reword any of them:\n${existingTopics.slice(0, 100).map(t => `- ${t}`).join("\n")}`
+      : "";
+
     const systemPrompt = `You are an expert SEO content strategist.
 
 ${intelligenceContext
@@ -445,8 +523,10 @@ Generate a JSON array of exactly ${days} items. Each item MUST have:
 - "type": one of "blog" | "listicle" | "how-to" | "case-study" | "opinion"
 - "keyword": the primary keyword to target
 - "long_tail_keyword": a unique 3-6 word long-tail phrase (different for every item)
+- "audience_persona": which specific reader this post is written for (see persona section below)
 - "description": FOUR sentences — (1) the specific problem or question this post solves, (2) the unique content angle that beats what is currently ranking, (3) who the target reader is and what stage they are at, (4) what the reader will be able to DO or KNOW after reading
 
+${brandVoice ? `BRAND VOICE: Write every title and description as if produced by a writer with this voice: "${brandVoice}". This takes priority over the generic tone below where they conflict.\n` : ""}
 CONTENT PHASE RULES:
 - Days 1-7 (FOUNDATION): Definitions, "what is" explainers, beginner concepts. Use titles like "What is...", "Beginner's Guide to...", "X Things Every [audience] Should Know"
 - Days 8-14 (HOW-TO): Step-by-step tutorials, implementation guides, workflows. Use titles like "How to...", "Step-by-Step Guide to...", "X Ways to Implement..."
@@ -458,6 +538,7 @@ OUTPUT RULES:
 - Every title must be unique
 - Every long_tail_keyword must be unique across the entire plan
 - Distribute content types: roughly 30% how-to, 30% listicle, 20% blog, 10% case-study, 10% opinion
+- Never repeat or lightly reword anything listed under ALREADY PUBLISHED/PLANNED, if provided
 - Return ONLY a valid JSON array — no markdown fences, no explanations`;
 
     const userPrompt = `Create a ${days}-day content plan for the following niche and keywords. Follow the content phase progression strictly.
@@ -466,7 +547,7 @@ NICHE: ${niche}
 PRIMARY KEYWORDS: ${keywords.join(", ")}
 ${longTailKeywords.length ? `SUPPORTING LONG-TAIL KEYWORDS (weave these into descriptions and as long_tail_keyword targets): ${longTailKeywords.slice(0, 15).join(", ")}` : ""}
 TONE: ${tone}
-${orgContext}
+${orgContext}${businessContext}${personaContext}${pillarContext}${gapsContext}${existingTopicsContext}
 
 GENERATION INSTRUCTIONS FOR EACH DAY:
 - For each day's "title": craft a specific, click-worthy title that targets a real search query. Avoid generic titles — make them concrete and benefit-driven.
@@ -477,6 +558,7 @@ GENERATION INSTRUCTIONS FOR EACH DAY:
   Sentence 3 — AUDIENCE: Identify who this post is written for (beginner/intermediate/expert), their goal, and what they already know.
   Sentence 4 — OUTCOME: State exactly what the reader will be able to do, decide, or understand by the end of the post.
 - For each day's "type": match the content format to the topic — use "how-to" for tutorials, "listicle" for collections of tips/tools/ideas, "case-study" for real-world examples, "opinion" for controversial or thought-leadership topics, "blog" for narrative or explainer content.
+- For each day's "audience_persona": ${idealCustomerProfiles.length ? "pick the single most relevant persona from the IDEAL CUSTOMER PROFILES list above" : "write a short 2-4 word label for the reader this post targets"}.
 
 PHASE PROGRESSION:
 Days 1-7: Cover foundational concepts — help beginners understand the basics of ${niche}.
@@ -524,44 +606,69 @@ ${serpContext}`;
     }
 
     // ── Step 4: QA / structure validation pass ────────────────────────────────
-    const requiredFields = ["day", "title", "type", "keyword", "long_tail_keyword", "description"];
-    const validTypes     = new Set(["blog", "listicle", "how-to", "case-study", "opinion"]);
+    const validTypes = new Set(["blog", "listicle", "how-to", "case-study", "opinion"]);
+    const defaultPersona = idealCustomerProfiles[0]?.name || "General Audience";
+    const existingTopicsLower = new Set(existingTopics.map((t) => t.toLowerCase()));
 
     plan = plan
       .filter((item: any) => typeof item === "object" && item !== null)
       .map((item: any, idx: number) => ({
-        day:              typeof item.day === "number" ? item.day : idx + 1,
-        title:            String(item.title || `Post ${idx + 1}`).slice(0, 150),
-        type:             validTypes.has(item.type) ? item.type : "blog",
-        keyword:          String(item.keyword || keywords[0] || niche).slice(0, 100),
+        day:               typeof item.day === "number" ? item.day : idx + 1,
+        title:             String(item.title || `Post ${idx + 1}`).slice(0, 150),
+        type:              validTypes.has(item.type) ? item.type : "blog",
+        keyword:           String(item.keyword || keywords[0] || niche).slice(0, 100),
         long_tail_keyword: String(item.long_tail_keyword || item.keyword || "").slice(0, 200),
-        description:      String(item.description || "").slice(0, 400),
+        audience_persona:  String(item.audience_persona || defaultPersona).slice(0, 80),
+        description:       String(item.description || "").slice(0, 400),
       }))
       .slice(0, days);
 
-    // Ensure unique long_tail_keywords
+    // Re-number sequentially 1..N — guarantees clean day coverage regardless
+    // of what day numbers the model actually returned (gaps/dupes/out-of-order).
+    plan = plan.map((item: any, idx: number) => ({ ...item, day: idx + 1 }));
+
+    // Deduplicate titles and long_tail_keywords (case-insensitive), and as a
+    // defense-in-depth backstop, catch anything the model repeated from
+    // existingTopics despite the prompt instruction not to.
+    const seenTitles = new Set<string>();
     const seenLTK = new Set<string>();
     plan = plan.map((item: any) => {
+      let title = item.title;
       let ltk = item.long_tail_keyword;
-      if (seenLTK.has(ltk)) ltk = `${ltk} ${item.type}`;
-      seenLTK.add(ltk);
-      return { ...item, long_tail_keyword: ltk };
+
+      if (seenTitles.has(title.toLowerCase()) || existingTopicsLower.has(title.toLowerCase())) {
+        title = `${title} — Day ${item.day}`;
+      }
+      seenTitles.add(title.toLowerCase());
+
+      if (seenLTK.has(ltk.toLowerCase()) || existingTopicsLower.has(ltk.toLowerCase())) {
+        ltk = `${ltk} (day ${item.day})`;
+      }
+      seenLTK.add(ltk.toLowerCase());
+
+      return { ...item, title, long_tail_keyword: ltk };
     });
 
-    console.log(`[content-plan] ✅ Generated ${plan.length} items. ${serpDataSummary ? `SERP: ${serpDataSummary}` : "No SERP data used."} ${contentIntelligence ? "With content intelligence." : ""}`);
+    const shortfall = days - plan.length;
+    console.log(`[content-plan] ✅ Generated ${plan.length}/${days} items. ${serpDataSummary ? `SERP: ${serpDataSummary}` : "No SERP data used."} ${contentIntelligence ? "With content intelligence." : ""} ${businessFacts.length ? `Business context: ${businessFacts.length} facts.` : ""} ${idealCustomerProfiles.length ? `${idealCustomerProfiles.length} personas.` : ""} ${existingTopics.length ? `Avoiding ${existingTopics.length} existing topics.` : ""}`);
 
     return json({
       plan,
       meta: {
         serpResearched: !!SERP_API_KEY && keywords.length > 0,
         contentIntelligenceUsed: !!contentIntelligence,
+        businessContextUsed: businessFacts.length > 0,
+        personaCount: idealCustomerProfiles.length,
+        existingTopicsAvoided: existingTopics.length,
         itemCount:      plan.length,
-        dataSource:     contentIntelligence 
-          ? "content_intelligence + openai" 
-          : body.serpBriefs?.length 
-            ? "serp_briefs + openai" 
-            : SERP_API_KEY 
-              ? "live_serp + openai" 
+        requestedDays:  days,
+        shortfall:      shortfall > 0 ? shortfall : 0,
+        dataSource:     contentIntelligence
+          ? "content_intelligence + openai"
+          : body.serpBriefs?.length
+            ? "serp_briefs + openai"
+            : SERP_API_KEY
+              ? "live_serp + openai"
               : "openai_only",
         serpSummary:    serpDataSummary || null,
       },

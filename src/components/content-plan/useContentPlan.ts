@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import type { ContentItem } from "./types";
+import type { ContentItem, BusinessContext } from "./types";
+import { emptyBusinessContext } from "./types";
 
 export function useContentPlan() {
   const { user, signOut, loading: authLoading } = useAuth();
@@ -13,6 +14,7 @@ export function useContentPlan() {
   const [niche, setNiche] = useState("");
   const [keywords, setKeywords] = useState<string[]>([]);
   const [longTailKeywords, setLongTailKeywords] = useState<string[]>([]);
+  const [businessContext, setBusinessContext] = useState<BusinessContext>(emptyBusinessContext);
   const [tone, setTone] = useState("professional");
   const [plan, setPlan] = useState<ContentItem[]>([]);
   const [generating, setGenerating] = useState(false);
@@ -48,11 +50,27 @@ export function useContentPlan() {
             .filter(Boolean);
           setLongTailKeywords(allLongTail);
         }
+        // Carry the full Analyze Site extraction through — grounds the plan
+        // in the real business instead of a bare keyword list.
+        setBusinessContext((prev) => ({
+          ...prev,
+          topicClusters: data.topicClusters?.length ? data.topicClusters : prev.topicClusters,
+          competitorKeywordGaps: data.competitorKeywordGaps?.length ? data.competitorKeywordGaps : prev.competitorKeywordGaps,
+          idealCustomerProfiles: data.idealCustomerProfiles?.length ? data.idealCustomerProfiles : prev.idealCustomerProfiles,
+          icp: data.primaryICP || prev.icp,
+          topServices: data.topServices?.length ? data.topServices : prev.topServices,
+          mainCta: data.mainCta || prev.mainCta,
+          trustAssets: data.trustAssets?.length ? data.trustAssets : prev.trustAssets,
+          brandVoice: data.brandVoice || prev.brandVoice,
+          valueProposition: data.valueProposition || prev.valueProposition,
+          businessModel: data.businessModel || prev.businessModel,
+          differentiators: data.differentiators?.length ? data.differentiators : prev.differentiators,
+        }));
       } catch (e) {
         console.error('Failed to parse stored analysis:', e);
       }
     }
-    
+
     // CRITICAL FIX: Load SERP analysis from sessionStorage (for non-logged-in users)
     const storedSerpAnalysis = sessionStorage.getItem('serpAnalysis');
     if (storedSerpAnalysis) {
@@ -90,7 +108,7 @@ export function useContentPlan() {
     Promise.all([
       supabase
         .from("profiles")
-        .select("niche, keywords, org_goals, org_vision")
+        .select("niche, keywords, org_goals, org_vision, icp, top_services, main_cta, trust_assets, brand_voice, value_proposition, business_model, differentiators")
         .eq("user_id", user.id)
         .maybeSingle(),
       supabase
@@ -110,10 +128,24 @@ export function useContentPlan() {
     ]).then(([profileRes, serpRes, planRes]) => {
       if (controller.signal.aborted) return;
 
-      if (profileRes.data?.niche != null) setNiche(profileRes.data.niche ?? "");
-      if (profileRes.data?.keywords?.length) setKeywords(profileRes.data.keywords);
-      if ((profileRes.data as any)?.org_goals != null) setOrgGoals((profileRes.data as any).org_goals ?? "");
-      if ((profileRes.data as any)?.org_vision != null) setOrgVision((profileRes.data as any).org_vision ?? "");
+      const p = profileRes.data as any;
+      if (p?.niche != null) setNiche(p.niche ?? "");
+      if (p?.keywords?.length) setKeywords(p.keywords);
+      if (p?.org_goals != null) setOrgGoals(p.org_goals ?? "");
+      if (p?.org_vision != null) setOrgVision(p.org_vision ?? "");
+      if (p) {
+        setBusinessContext((prev) => ({
+          ...prev,
+          icp: p.icp || prev.icp,
+          topServices: p.top_services?.length ? p.top_services : prev.topServices,
+          mainCta: p.main_cta || prev.mainCta,
+          trustAssets: p.trust_assets?.length ? p.trust_assets : prev.trustAssets,
+          brandVoice: p.brand_voice || prev.brandVoice,
+          valueProposition: p.value_proposition || prev.valueProposition,
+          businessModel: p.business_model || prev.businessModel,
+          differentiators: p.differentiators?.length ? p.differentiators : prev.differentiators,
+        }));
+      }
 
       if (serpRes.data) {
         setSerpInsights((serpRes.data as any).analysis);
@@ -293,11 +325,28 @@ export function useContentPlan() {
       }
 
       setGenerationProgress(50);
-      const allKeywords = [...keywords, ...longTailKeywords];
+
+      // Avoid repeating topics from earlier plans/posts — important for
+      // recurring generation once a first 30-day cycle has already run.
+      let existingTopics: string[] = [];
+      if (user) {
+        try {
+          const { data: pastPosts } = await supabase
+            .from("blog_posts")
+            .select("title, keywords")
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false })
+            .limit(150);
+          existingTopics = (pastPosts ?? []).flatMap((p: any) => [p.title, ...(p.keywords || [])]).filter(Boolean);
+        } catch (e) {
+          console.log('[content-plan] Failed to load existing posts for dedup, continuing without it:', e);
+        }
+      }
+
       const { data, error } = await supabase.functions.invoke("generate-content-plan", {
         body: {
           niche,
-          keywords: allKeywords,
+          keywords,
           longTailKeywords,
           days,
           tone,
@@ -305,6 +354,8 @@ export function useContentPlan() {
           contentIntelligence: intelligenceData || undefined,
           orgGoals: orgGoals || undefined,
           orgVision: orgVision || undefined,
+          businessContext,
+          existingTopics,
         },
       });
 
@@ -326,9 +377,13 @@ export function useContentPlan() {
         setSavedPlanId(id);
       }
 
+      const shortfall = data.meta?.shortfall || 0;
       toast({
-        title: `✅ Real content plan ready!`,
-        description: `${newPlan.length} posts from live Google data (${data.meta?.dataSource ?? "AI"}).`,
+        title: shortfall > 0 ? `⚠️ Plan ready — ${shortfall} day${shortfall === 1 ? "" : "s"} short` : `✅ Real content plan ready!`,
+        description: shortfall > 0
+          ? `Generated ${newPlan.length}/${days} posts (${data.meta?.dataSource ?? "AI"}). You can add the remaining days manually or regenerate.`
+          : `${newPlan.length} posts from live Google data (${data.meta?.dataSource ?? "AI"}).`,
+        variant: shortfall > 0 ? "destructive" : undefined,
       });
     } catch (e: any) {
       clearInterval(progressInterval);
@@ -344,7 +399,7 @@ export function useContentPlan() {
       setGenerating(false);
       setTimeout(() => setGenerationProgress(0), 1000);
     }
-  }, [niche, keywords, longTailKeywords, days, tone, serpInsights, orgGoals, orgVision, savedPlanId, savePlanData, toast, user]);
+  }, [niche, keywords, longTailKeywords, days, tone, serpInsights, orgGoals, orgVision, businessContext, savedPlanId, savePlanData, toast, user]);
 
   const savePlan = useCallback(async () => {
     if (!user || plan.length === 0) return;

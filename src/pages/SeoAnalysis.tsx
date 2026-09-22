@@ -186,12 +186,56 @@ const effortColors: Record<string, string> = {
   high: "text-red-400",
 };
 
+// Everything from the Analyze Site page beyond niche/keywords — carried
+// through so the SERP analysis is grounded in the business itself, not
+// just a bare keyword list.
+interface BusinessContext {
+  subNiches: string[];
+  description: string;
+  topicClusters: { pillar: string; supporting: string[] }[];
+  competitorKeywordGaps: string[];
+  idealCustomerProfiles: unknown[];
+  icp: string;
+  offers: string[];
+  regions: string[];
+  topServices: string[];
+  mainCta: string;
+  trustAssets: string[];
+  brandVoice: string;
+  valueProposition: string;
+  businessModel: string;
+  differentiators: string[];
+  teamExpertise: string[];
+  foundedYear: string;
+}
+
+const emptyBusinessContext: BusinessContext = {
+  subNiches: [],
+  description: "",
+  topicClusters: [],
+  competitorKeywordGaps: [],
+  idealCustomerProfiles: [],
+  icp: "",
+  offers: [],
+  regions: [],
+  topServices: [],
+  mainCta: "",
+  trustAssets: [],
+  brandVoice: "",
+  valueProposition: "",
+  businessModel: "",
+  differentiators: [],
+  teamExpertise: [],
+  foundedYear: "",
+};
+
 const SeoAnalysis = () => {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const [niche, setNiche] = useState("");
   const [keywords, setKeywords] = useState<string[]>([]);
+  const [businessContext, setBusinessContext] = useState<BusinessContext>(emptyBusinessContext);
   const [profileLoading, setProfileLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
@@ -214,6 +258,28 @@ const SeoAnalysis = () => {
             .filter(Boolean);
           setKeywords(allKeywords);
         }
+        // Carry the entire Analyze Site extraction through, not just
+        // niche/keywords — grounds the SERP analysis in the real business.
+        setBusinessContext((prev) => ({
+          ...prev,
+          subNiches: data.subNiches?.length ? data.subNiches : prev.subNiches,
+          description: data.description || prev.description,
+          topicClusters: data.topicClusters?.length ? data.topicClusters : prev.topicClusters,
+          competitorKeywordGaps: data.competitorKeywordGaps?.length ? data.competitorKeywordGaps : prev.competitorKeywordGaps,
+          idealCustomerProfiles: data.idealCustomerProfiles?.length ? data.idealCustomerProfiles : prev.idealCustomerProfiles,
+          icp: data.primaryICP || prev.icp,
+          offers: data.offers?.length ? data.offers : prev.offers,
+          regions: data.regions?.length ? data.regions : prev.regions,
+          topServices: data.topServices?.length ? data.topServices : prev.topServices,
+          mainCta: data.mainCta || prev.mainCta,
+          trustAssets: data.trustAssets?.length ? data.trustAssets : prev.trustAssets,
+          brandVoice: data.brandVoice || prev.brandVoice,
+          valueProposition: data.valueProposition || prev.valueProposition,
+          businessModel: data.businessModel || prev.businessModel,
+          differentiators: data.differentiators?.length ? data.differentiators : prev.differentiators,
+          teamExpertise: data.teamExpertise?.length ? data.teamExpertise : prev.teamExpertise,
+          foundedYear: data.foundedYear || prev.foundedYear,
+        }));
       } catch (e) {
         console.error('Failed to parse stored analysis:', e);
       }
@@ -236,12 +302,29 @@ const SeoAnalysis = () => {
     if (user) {
       supabase
         .from("profiles")
-        .select("niche, keywords")
+        .select("niche, keywords, icp, offers, regions, top_services, main_cta, trust_assets, brand_voice, value_proposition, business_model, differentiators, team_expertise, founded_year")
         .eq("user_id", user.id)
         .maybeSingle()
         .then(({ data }) => {
           if (data?.niche) setNiche(data.niche);
           if (data?.keywords?.length) setKeywords(data.keywords);
+          if (data) {
+            setBusinessContext((prev) => ({
+              ...prev,
+              icp: data.icp || prev.icp,
+              offers: data.offers?.length ? data.offers : prev.offers,
+              regions: data.regions?.length ? data.regions : prev.regions,
+              topServices: data.top_services?.length ? data.top_services : prev.topServices,
+              mainCta: data.main_cta || prev.mainCta,
+              trustAssets: data.trust_assets?.length ? data.trust_assets : prev.trustAssets,
+              brandVoice: data.brand_voice || prev.brandVoice,
+              valueProposition: data.value_proposition || prev.valueProposition,
+              businessModel: data.business_model || prev.businessModel,
+              differentiators: data.differentiators?.length ? data.differentiators : prev.differentiators,
+              teamExpertise: data.team_expertise?.length ? data.team_expertise : prev.teamExpertise,
+              foundedYear: data.founded_year || prev.foundedYear,
+            }));
+          }
           setProfileLoading(false);
         });
 
@@ -295,7 +378,7 @@ const SeoAnalysis = () => {
       }, 3000); // Update every 3 seconds
 
       const { data, error } = await supabase.functions.invoke("seo-analysis", {
-        body: { niche, keywords },
+        body: { niche, keywords, businessContext },
       });
       
       clearInterval(progressInterval);

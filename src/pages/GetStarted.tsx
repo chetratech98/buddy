@@ -10,7 +10,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { PageShell } from "@/components/PageShell";
 import { useAuth } from "@/contexts/AuthContext";
-import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -64,6 +63,13 @@ interface AnalysisResult {
   topServices?: string[];
   mainCta?: string;
   trustAssets?: string[];
+  // Content-generation & business-intelligence fields, auto-extracted from the site
+  brandVoice?: string;
+  valueProposition?: string;
+  businessModel?: string;
+  differentiators?: string[];
+  teamExpertise?: string[];
+  foundedYear?: string;
 }
 
 interface BusinessProfile {
@@ -73,6 +79,12 @@ interface BusinessProfile {
   topServices: string[];
   mainCta: string;
   trustAssets: string[];
+  brandVoice: string;
+  valueProposition: string;
+  businessModel: string;
+  differentiators: string[];
+  teamExpertise: string[];
+  foundedYear: string;
 }
 
 const emptyBusinessProfile: BusinessProfile = {
@@ -82,6 +94,12 @@ const emptyBusinessProfile: BusinessProfile = {
   topServices: [],
   mainCta: "",
   trustAssets: [],
+  brandVoice: "",
+  valueProposition: "",
+  businessModel: "",
+  differentiators: [],
+  teamExpertise: [],
+  foundedYear: "",
 };
 
 const intentColors: Record<string, string> = {
@@ -171,7 +189,6 @@ const ReadOnlyTagRow = ({ label, values }: { label: string; values: string[] }) 
 
 const GetStarted = () => {
   const { user, loading } = useAuth();
-  const navigate = useNavigate();
   const [url, setUrl] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
@@ -257,6 +274,12 @@ const GetStarted = () => {
         top_services: editProfile.topServices,
         main_cta: editProfile.mainCta,
         trust_assets: editProfile.trustAssets,
+        brand_voice: editProfile.brandVoice,
+        value_proposition: editProfile.valueProposition,
+        business_model: editProfile.businessModel,
+        differentiators: editProfile.differentiators,
+        team_expertise: editProfile.teamExpertise,
+        founded_year: editProfile.foundedYear,
       } as any)
       .eq("user_id", user.id);
 
@@ -278,7 +301,7 @@ const GetStarted = () => {
     if (!user) return;
     supabase
       .from("profiles")
-      .select("icp, offers, regions, top_services, main_cta, trust_assets")
+      .select("icp, offers, regions, top_services, main_cta, trust_assets, brand_voice, value_proposition, business_model, differentiators, team_expertise, founded_year")
       .eq("user_id", user.id)
       .maybeSingle()
       .then(({ data }) => {
@@ -290,6 +313,12 @@ const GetStarted = () => {
             topServices: data.top_services || [],
             mainCta: data.main_cta || "",
             trustAssets: data.trust_assets || [],
+            brandVoice: data.brand_voice || "",
+            valueProposition: data.value_proposition || "",
+            businessModel: data.business_model || "",
+            differentiators: data.differentiators || [],
+            teamExpertise: data.team_expertise || [],
+            foundedYear: data.founded_year || "",
           });
         }
       });
@@ -394,6 +423,12 @@ const GetStarted = () => {
             topServices: businessProfile.topServices.length ? businessProfile.topServices : (data.data.topServices || []),
             mainCta: businessProfile.mainCta || (data.data.mainCta || ""),
             trustAssets: businessProfile.trustAssets.length ? businessProfile.trustAssets : (data.data.trustAssets || []),
+            brandVoice: businessProfile.brandVoice || (data.data.brandVoice || ""),
+            valueProposition: businessProfile.valueProposition || (data.data.valueProposition || ""),
+            businessModel: businessProfile.businessModel || (data.data.businessModel || ""),
+            differentiators: businessProfile.differentiators.length ? businessProfile.differentiators : (data.data.differentiators || []),
+            teamExpertise: businessProfile.teamExpertise.length ? businessProfile.teamExpertise : (data.data.teamExpertise || []),
+            foundedYear: businessProfile.foundedYear || (data.data.foundedYear || ""),
           };
 
           const { error: profileErr } = await supabase
@@ -405,6 +440,12 @@ const GetStarted = () => {
               top_services: mergedProfile.topServices,
               main_cta: mergedProfile.mainCta,
               trust_assets: mergedProfile.trustAssets,
+              brand_voice: mergedProfile.brandVoice,
+              value_proposition: mergedProfile.valueProposition,
+              business_model: mergedProfile.businessModel,
+              differentiators: mergedProfile.differentiators,
+              team_expertise: mergedProfile.teamExpertise,
+              founded_year: mergedProfile.foundedYear,
             } as any)
             .eq("user_id", user.id);
 
@@ -503,13 +544,53 @@ const GetStarted = () => {
                     </div>
 
                     <div>
-                      <label className="text-xs font-medium text-muted-foreground mb-1 block">Main CTA</label>
-                      <Input
-                        value={editProfile.mainCta}
-                        onChange={(e) => setEditProfile({ ...editProfile, mainCta: e.target.value })}
-                        placeholder="e.g., Book a Free Demo"
+                      <label className="text-xs font-medium text-muted-foreground mb-1 block">Value Proposition</label>
+                      <Textarea
+                        value={editProfile.valueProposition}
+                        onChange={(e) => setEditProfile({ ...editProfile, valueProposition: e.target.value })}
+                        placeholder="The core reason a visitor should pick you over alternatives…"
                         className="text-sm"
+                        rows={2}
                       />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground mb-1 block">Main CTA</label>
+                        <Input
+                          value={editProfile.mainCta}
+                          onChange={(e) => setEditProfile({ ...editProfile, mainCta: e.target.value })}
+                          placeholder="e.g., Book a Free Demo"
+                          className="text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground mb-1 block">Business Model</label>
+                        <Input
+                          value={editProfile.businessModel}
+                          onChange={(e) => setEditProfile({ ...editProfile, businessModel: e.target.value })}
+                          placeholder="e.g., B2B SaaS"
+                          className="text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground mb-1 block">Brand Voice</label>
+                        <Input
+                          value={editProfile.brandVoice}
+                          onChange={(e) => setEditProfile({ ...editProfile, brandVoice: e.target.value })}
+                          placeholder="e.g., Professional and authoritative"
+                          className="text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground mb-1 block">Founded Year</label>
+                        <Input
+                          value={editProfile.foundedYear}
+                          onChange={(e) => setEditProfile({ ...editProfile, foundedYear: e.target.value })}
+                          placeholder="e.g., 2019"
+                          className="text-sm"
+                        />
+                      </div>
                     </div>
 
                     <TagListField
@@ -529,6 +610,18 @@ const GetStarted = () => {
                       values={editProfile.topServices}
                       onChange={(v) => setEditProfile({ ...editProfile, topServices: v })}
                       placeholder="Add a service…"
+                    />
+                    <TagListField
+                      label="Differentiators"
+                      values={editProfile.differentiators}
+                      onChange={(v) => setEditProfile({ ...editProfile, differentiators: v })}
+                      placeholder="What sets you apart from competitors…"
+                    />
+                    <TagListField
+                      label="Team Expertise"
+                      values={editProfile.teamExpertise}
+                      onChange={(v) => setEditProfile({ ...editProfile, teamExpertise: v })}
+                      placeholder="e.g., Founded by former Google engineers…"
                     />
                     <TagListField
                       label="Trust Assets"
@@ -553,12 +646,32 @@ const GetStarted = () => {
                       <p className="text-sm text-foreground/80 mt-1 leading-relaxed">{businessProfile.icp || "Not set"}</p>
                     </div>
                     <div>
-                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Main CTA</span>
-                      <p className="text-sm text-foreground/80 mt-1">{businessProfile.mainCta || "Not set"}</p>
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Value Proposition</span>
+                      <p className="text-sm text-foreground/80 mt-1 leading-relaxed">{businessProfile.valueProposition || "Not set"}</p>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Main CTA</span>
+                        <p className="text-sm text-foreground/80 mt-1">{businessProfile.mainCta || "Not set"}</p>
+                      </div>
+                      <div>
+                        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Business Model</span>
+                        <p className="text-sm text-foreground/80 mt-1">{businessProfile.businessModel || "Not set"}</p>
+                      </div>
+                      <div>
+                        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Brand Voice</span>
+                        <p className="text-sm text-foreground/80 mt-1">{businessProfile.brandVoice || "Not set"}</p>
+                      </div>
+                      <div>
+                        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Founded Year</span>
+                        <p className="text-sm text-foreground/80 mt-1">{businessProfile.foundedYear || "Not set"}</p>
+                      </div>
                     </div>
                     <ReadOnlyTagRow label="Offers" values={businessProfile.offers} />
                     <ReadOnlyTagRow label="Regions Served" values={businessProfile.regions} />
                     <ReadOnlyTagRow label="Top Services" values={businessProfile.topServices} />
+                    <ReadOnlyTagRow label="Differentiators" values={businessProfile.differentiators} />
+                    <ReadOnlyTagRow label="Team Expertise" values={businessProfile.teamExpertise} />
                     <ReadOnlyTagRow label="Trust Assets" values={businessProfile.trustAssets} />
                   </div>
                 )}
@@ -966,21 +1079,11 @@ const GetStarted = () => {
                   <ReadOnlyTagRow label="Regions Served" values={businessProfile.regions.slice(0, 4)} />
                   <ReadOnlyTagRow label="Top Services" values={businessProfile.topServices.slice(0, 4)} />
                   <ReadOnlyTagRow label="Trust Assets" values={businessProfile.trustAssets.slice(0, 4)} />
+                  <ReadOnlyTagRow label="Differentiators" values={businessProfile.differentiators.slice(0, 4)} />
+                  <ReadOnlyTagRow label="Team Expertise" values={businessProfile.teamExpertise.slice(0, 4)} />
                 </div>
               </CardContent>
             </Card>
-          )}
-
-          {result && (
-            <div className="mt-8 flex justify-end">
-              <Button
-                onClick={() => navigate("/seo-analysis")}
-                className="h-11 px-6 rounded-xl"
-              >
-                Continue to SERP Analysis
-                <ArrowRight size={16} className="ml-2" />
-              </Button>
-            </div>
           )}
         </motion.div>
     </PageShell>

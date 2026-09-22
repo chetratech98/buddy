@@ -72,6 +72,37 @@ serve(async (req) => {
       return jsonResponse({ error: "Niche and keywords are required" }, 400);
     }
 
+    // Business context carried over from the Analyze Site page — optional,
+    // grounds the qualitative analysis in the real business instead of a
+    // bare keyword list. Every field is defensively coerced since it comes
+    // from client-controlled sessionStorage/DB state.
+    const ctx = (body.businessContext && typeof body.businessContext === "object") ? body.businessContext : {};
+    const ctxStr = (v: unknown, max = 300) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : "");
+    const ctxArr = (v: unknown, max = 8) =>
+      Array.isArray(v) ? v.filter((x) => typeof x === "string" && x.trim()).slice(0, max).map((s) => String(s).slice(0, 150)) : [];
+
+    const businessContextLines: string[] = [];
+    const valueProposition = ctxStr(ctx.valueProposition);
+    const businessModel    = ctxStr(ctx.businessModel, 60);
+    const brandVoice       = ctxStr(ctx.brandVoice, 60);
+    const icp               = ctxStr(ctx.icp, 500);
+    const differentiators  = ctxArr(ctx.differentiators);
+    const topServices      = ctxArr(ctx.topServices);
+    const trustAssets      = ctxArr(ctx.trustAssets);
+    const teamExpertise    = ctxArr(ctx.teamExpertise);
+
+    if (businessModel) businessContextLines.push(`Business model: ${businessModel}`);
+    if (brandVoice) businessContextLines.push(`Brand voice: ${brandVoice}`);
+    if (valueProposition) businessContextLines.push(`Value proposition: ${valueProposition}`);
+    if (icp) businessContextLines.push(`Ideal customer: ${icp}`);
+    if (differentiators.length) businessContextLines.push(`Differentiators: ${differentiators.join("; ")}`);
+    if (topServices.length) businessContextLines.push(`Top services/offers: ${topServices.join("; ")}`);
+    if (trustAssets.length) businessContextLines.push(`Trust signals: ${trustAssets.join("; ")}`);
+    if (teamExpertise.length) businessContextLines.push(`Team expertise: ${teamExpertise.join("; ")}`);
+    const businessContextBlock = businessContextLines.length
+      ? `\n\nBUSINESS CONTEXT (from site analysis — use this to make recommendations specific to THIS business, not generic SEO advice):\n${businessContextLines.map(l => `- ${l}`).join("\n")}`
+      : "";
+
     const SERP_API_KEY  = Deno.env.get("SERP_API_KEY");
     const OPENAI_KEY    = Deno.env.get("OPENAI_API_KEY");
     const FIRECRAWL_KEY = Deno.env.get("FIRECRAWL_API_KEY");
@@ -233,7 +264,7 @@ serve(async (req) => {
 DO NOT change or invent difficulty scores, word counts, or intent labels — those are already measured accurately.
 Return ONLY valid JSON. No markdown fences.`;
 
-    const userPrompt = `Niche: "${niche}" | Keywords: ${limitedKeywords.join(", ")}
+    const userPrompt = `Niche: "${niche}" | Keywords: ${limitedKeywords.join(", ")}${businessContextBlock}
 
 MEASURED SERP DATA:
 ${serpSummary}
@@ -276,7 +307,7 @@ Add qualitative analysis to this data. Return JSON:
   }
 }
 
-Base ALL qualitative analysis on the actual snippets, titles, and domains in the measured data above.`;
+Base ALL qualitative analysis on the actual snippets, titles, and domains in the measured data above.${businessContextBlock ? " Where BUSINESS CONTEXT is provided above, make opportunities, quick wins, and recommendations specific to that business (its actual differentiators, ICP, and services) instead of generic SEO advice anyone could give." : ""}`;
 
     const aiRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",

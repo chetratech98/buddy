@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { searchSerp, scrapePage } from "../_shared/scraping.ts";
+import { scoreContent } from "../_shared/seo-scorer.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -145,8 +146,11 @@ serve(async (req) => {
     // Two callers are supported:
     //  1. A logged-in user's browser — Authorization: Bearer <user JWT>, verified via getUser().
     //  2. A trusted server-to-server caller (e.g. the daily-blog-generator cron job) —
-    //     Authorization: Bearer <SERVICE_ROLE_KEY> plus an explicit `user_id` in the body,
-    //     since a service-role key has no associated auth.getUser() identity to check.
+    //     Authorization: Bearer <INTERNAL_FUNCTION_SECRET> plus an explicit `user_id` in
+    //     the body. This is a dedicated secret for this trust boundary rather than the
+    //     Supabase-managed service-role key, since that key's representation (legacy JWT
+    //     vs. new sb_secret_ format) isn't guaranteed to stay in sync across separately
+    //     deployed functions reading it as an ambient env var.
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return jsonResponse({ error: "Unauthorized" }, 401);
@@ -154,8 +158,8 @@ serve(async (req) => {
     const bearerToken = authHeader.slice("Bearer ".length);
     const body = await req.json();
 
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-    const isServiceRoleCall = Boolean(serviceRoleKey) && bearerToken === serviceRoleKey;
+    const internalSecret = Deno.env.get("INTERNAL_FUNCTION_SECRET") ?? "";
+    const isServiceRoleCall = Boolean(internalSecret) && bearerToken === internalSecret;
 
     let supabase: ReturnType<typeof createClient>;
     let userId: string;
@@ -165,7 +169,7 @@ serve(async (req) => {
       if (!impersonatedUserId) {
         return jsonResponse({ error: "user_id is required for service-role calls" }, 400);
       }
-      supabase = createClient(Deno.env.get("SUPABASE_URL") ?? "", serviceRoleKey);
+      supabase = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "");
       userId = impersonatedUserId;
     } else {
       supabase = createClient(
@@ -202,9 +206,11 @@ serve(async (req) => {
     const topic    = typeof body.topic    === "string" ? body.topic.trim().slice(0, 1000)   : "";
     const keywords = typeof body.keywords === "string" ? body.keywords.trim().slice(0, 500) : "";
     const tone     = typeof body.tone     === "string" ? body.tone.trim().slice(0, 50)      : "professional";
+    // 2200 words clears the scorer's "Good" tier (2,000+) comfortably even
+    // after minor trimming in the QA pass — 1,500 only cleared "Acceptable".
     const targetWordCount = typeof body.targetWordCount === "number" && body.targetWordCount >= 500 && body.targetWordCount <= 5000
       ? body.targetWordCount
-      : 1500;
+      : 2200;
     const template          = body.template ?? null;
     const contentType       = typeof body.contentType === "string" ? body.contentType.trim() : "blog";
     const contentPlanBrief  = typeof body.contentPlanBrief === "string" ? body.contentPlanBrief.trim().slice(0, 1000) : "";
@@ -336,11 +342,19 @@ ${contentGaps.map((gap: string) => `- ${gap}`).join('\n')}` : ''}
 
     const systemPrompt = `You are an expert SEO content writer with deep knowledge of Google's E-E-A-T principles (Experience, Expertise, Authoritativeness, Trust). You write comprehensive, data-driven blog posts that outrank competitors.
 
-QUALITY STANDARDS:
-- Target ${intelligenceWordCount} words (±10% is acceptable)
+This content will be scored by a deterministic SEO checker with these EXACT, non-negotiable rules — every one of them affects the score, so treat all of them as hard requirements, not suggestions:
+- WORD COUNT: at least 2,000 words (target ${intelligenceWordCount}, ±10%). Under 2,000 loses significant points.
+- KEYWORD DENSITY: the primary keyword (first entry in "keywords") must appear at a density of 1.0–2.5% of total words — that's roughly 1 mention per 60–100 words. Track this while writing; too few OR too many mentions both lose points.
+- HEADINGS: at least 5 "## " (H2) headings AND at least 2 "### " (H3) subheadings. The primary keyword MUST appear verbatim in at least one H2 or H3 heading, not just in body text.
+- FAQ: a dedicated FAQ section near the end with at least 5 questions. Each question MUST be its own H3 heading ("### Question text?") ending in a question mark — not a "Q:"/"A:" pair, not a bolded line. The scorer only counts heading-formatted questions.
+- TITLE: 50–70 characters AND must contain the primary keyword verbatim.
+- META DESCRIPTION (the "excerpt" field): exactly 120–160 characters.
+- SEMANTIC RICHNESS: naturally use at least 3 of the OTHER keywords from the "keywords" list (not just the primary one) somewhere in the body — these are secondary/LSI terms, and using them is what the checker rewards.
+- READABILITY: keep average sentence length around 15–20 words — long, complex sentences lose readability points.
+
+OTHER QUALITY STANDARDS:
 - Use proper markdown: H2 (##) and H3 (###) headings, bullet lists, bold key terms
-- ${contentIntelligence?.faq?.length > 0 ? 'Include the FAQ section with the provided questions' : 'Include a FAQ section at the end with 3–5 questions'}
-- Natural keyword integration (1.5–2% density) — never keyword-stuffed
+- Natural keyword integration — never keyword-stuffed even while hitting the density target above
 - Factual, specific, and actionable — no vague filler content
 - Strong intro (hook the reader in the first 2 sentences) and clear conclusion with CTA
 - Add real examples, case studies, statistics, and actionable tips throughout
@@ -464,20 +478,36 @@ The content must be at least ${targetWordCount} words.`;
     }
 
     // ── PHASE 4: QA Review Pass ───────────────────────────────────────────────
+    // Score the draft with the SAME deterministic checker EditPost/CreatePost
+    // use, and feed its actual suggestions into the fix prompt — a targeted,
+    // measured fix instead of hoping generic structural guidance is enough.
+    const scoreFor = (p: BlogPost) => scoreContent({
+      title: p.title || "",
+      content: p.content || "",
+      keywords: Array.isArray(p.keywords) && p.keywords.length ? p.keywords : keywords.split(",").map((k) => k.trim()).filter(Boolean),
+      seoDescription: p.excerpt || "",
+    });
+
+    let scoreBreakdown = scoreFor(post);
+    console.log(`[generate-blog] Pre-QA SEO score: ${scoreBreakdown.total}/100 (${scoreBreakdown.grade})`);
+
     const reviewSystemPrompt = `You are a strict SEO QA editor. Review and fix the blog post if needed. Return ONLY valid JSON.`;
     const reviewUserPrompt = `Review this blog post for the topic "${topic}" and keywords "${keywords}".
 
 FIX ANY OF THESE ISSUES (if present):
-1. Title must be 50–70 chars and SEO-optimized — fix if not
+1. Title must be 50–70 chars, contain the primary keyword, and be SEO-optimized — fix if not
 2. Excerpt must be 120–160 chars — fix if not
 3. Content must have a proper introduction (2+ sentences), body (H2/H3 sections), and conclusion
-4. Target keywords ("${keywords}") must appear naturally in title, at least 2 headings, and throughout body
+4. Target keywords ("${keywords}") must appear naturally in title, at least one H2/H3 heading, and throughout body
 5. Tone must be consistently "${tone}"
 6. No incomplete sentences, no placeholder text like [INSERT X HERE]
-7. FAQ section must exist (3+ questions)
+7. FAQ section must exist with 5+ questions, each as its own H3 heading ending in "?" (not "Q:"/"A:" pairs)
 8. Content type is "${contentType}" — verify the structure matches: how-to uses numbered steps, listicle has individual H2s per item, case-study has Results section, opinion takes a clear stance
 9. Verify "wordCount" field reflects actual content word count
 10. Keep "ogImagePrompt" as-is unless it's missing or empty — it is not affected by content edits
+
+THIS SPECIFIC DRAFT'S MEASURED SEO ISSUES (fix these precisely — this is real scoring output, not a guess):
+${scoreBreakdown.suggestions.length ? scoreBreakdown.suggestions.map((s) => `- ${s}`).join("\n") : "- No issues detected — content already scores well."}
 
 Current post:
 ${JSON.stringify(post)}
@@ -505,14 +535,69 @@ If everything is correct, return unchanged.`;
       console.warn("[generate-blog] QA review pass failed, using generation output:", reviewErr);
     }
 
+    scoreBreakdown = scoreFor(post);
+    console.log(`[generate-blog] Post-QA SEO score: ${scoreBreakdown.total}/100 (${scoreBreakdown.grade})`);
+
+    // One more targeted pass if the score is still weak — capped at a single
+    // extra round-trip so a stubborn draft can't loop the function forever.
+    if (scoreBreakdown.total < 85 && scoreBreakdown.suggestions.length) {
+      console.log(`[generate-blog] Score still ${scoreBreakdown.total}/100 — running one targeted fix pass...`);
+      const fixPrompt = `This blog post scored ${scoreBreakdown.total}/100 on our SEO checker. Fix ONLY these specific measured issues, without otherwise rewriting the post:
+${scoreBreakdown.suggestions.map((s) => `- ${s}`).join("\n")}
+
+Current post:
+${JSON.stringify(post)}
+
+Return ONLY valid JSON in the same format: { title, excerpt, content, keywords, ogImagePrompt, wordCount, competitorUrlsAnalyzed }`;
+
+      try {
+        const fixedRaw = await callOpenAI(
+          OPENAI_API_KEY,
+          [
+            { role: "system", content: "You are a precise SEO editor making surgical, targeted fixes to an existing draft. Return ONLY valid JSON." },
+            { role: "user", content: fixPrompt },
+          ],
+          0.3
+        );
+        const fixedPost = parseJSON<BlogPost & { wordCount?: number; competitorUrlsAnalyzed?: number }>(fixedRaw);
+        if (fixedPost?.title && fixedPost?.content) {
+          const fixedScore = scoreFor(fixedPost);
+          // Only keep the fix if it actually improved the score — never
+          // regress a draft based on a single re-write attempt.
+          if (fixedScore.total >= scoreBreakdown.total) {
+            post = { ...post, ...fixedPost, ogImagePrompt: fixedPost.ogImagePrompt || post.ogImagePrompt };
+            scoreBreakdown = fixedScore;
+            console.log(`[generate-blog] Targeted fix improved score to ${scoreBreakdown.total}/100`);
+          } else {
+            console.log(`[generate-blog] Targeted fix did not improve score (${fixedScore.total} < ${scoreBreakdown.total}) — keeping prior draft`);
+          }
+        }
+      } catch (fixErr) {
+        console.warn("[generate-blog] Targeted fix pass failed, keeping prior draft:", fixErr);
+      }
+    }
+
     // ── Final metadata ─────────────────────────────────────────────────────────
     post.wordCount = countWords(post.content || "");
     post.competitorUrlsAnalyzed = competitorUrls.length;
     post.ogImagePrompt = post.ogImagePrompt || "";
 
+    // Real, measured values — not just AI-echoed fields — so every caller
+    // (interactive save, daily-blog-generator) can persist an accurate score
+    // and meta title/description without recomputing anything themselves.
+    const seoTitle = post.title || "";
+    const seoDescription = post.excerpt || "";
+    const seoScore = scoreBreakdown.total;
+    console.log(`[generate-blog] Final SEO score: ${seoScore}/100 (${scoreBreakdown.grade})`);
+
     // Add content intelligence metadata if available
     const response: any = {
       ...post,
+      seoTitle,
+      seoDescription,
+      seoScore,
+      seoScoreGrade: scoreBreakdown.grade,
+      seoScoreBreakdown: scoreBreakdown,
       contentIntelligence: contentIntelligence ? {
         searchIntent: contentIntelligence.searchIntent?.primary,
         intentConfidence: contentIntelligence.searchIntent?.confidence,
@@ -526,7 +611,7 @@ If everything is correct, return unchanged.`;
     };
 
     console.log(
-      `[generate-blog] Final: "${post.title}" | ${post.wordCount} words | ${post.competitorUrlsAnalyzed} competitors analyzed | Intelligence: ${contentIntelligence ? 'YES' : 'NO'}`
+      `[generate-blog] Final: "${post.title}" | ${post.wordCount} words | SEO score ${seoScore}/100 (${scoreBreakdown.grade}) | ${post.competitorUrlsAnalyzed} competitors analyzed | Intelligence: ${contentIntelligence ? 'YES' : 'NO'}`
     );
 
     return jsonResponse(response);

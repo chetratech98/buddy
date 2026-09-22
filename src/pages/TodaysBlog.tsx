@@ -61,7 +61,7 @@ const TodaysBlog = () => {
   const [previewMode, setPreviewMode] = useState(false);
   const [alreadyPostedToday, setAlreadyPostedToday] = useState(false);
   const [tone, setTone] = useState("professional");
-  const [targetWordCount, setTargetWordCount] = useState(1500);
+  const [targetWordCount, setTargetWordCount] = useState(2200);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [niche, setNiche] = useState("");
 
@@ -174,6 +174,9 @@ const TodaysBlog = () => {
           content: data.content || "",
           keywords: data.keywords || [todayItem.keyword],
           og_image_prompt: data.ogImagePrompt || "",
+          seo_title: data.seoTitle || data.title || todayItem.title,
+          seo_description: data.seoDescription || data.excerpt || "",
+          seo_score: typeof data.seoScore === "number" ? data.seoScore : null,
           status: "draft",
         })
         .select()

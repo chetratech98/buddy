@@ -3,24 +3,36 @@
  * each user's active 30-day content plan, so users don't have to manually
  * visit "Today's Blog" and click Generate every day.
  *
- * Workflow (per user with a content plan):
+ * Each invocation processes AT MOST ONE user (see the loop below) — a full
+ * generate-blog run (SERP + scraping + two LLM passes) is enough compute
+ * that doing it for several users inside one invocation hits Supabase's
+ * per-invocation resource limit. Instead, pg_cron fires this every few
+ * minutes during a morning window (see the migration), and each tick
+ * generates for the next user still due today.
+ *
+ * Workflow (for the first eligible user found):
  *   1. Compute "today's day number" the same way the Today's Blog page does:
  *      days elapsed since the plan's created_at, wrapped into a 1..plan.days cycle.
  *   2. Look up that day's topic/keyword/brief in plan.items.
  *   3. Skip if a post already exists for this user today (manual generation
- *      earlier today, or this cron already ran once today).
- *   4. Call generate-blog (impersonating the user via the service-role auth
- *      path) to write the post — reuses the exact same generation pipeline
- *      (competitor research, content intelligence, QA pass, quota check).
+ *      earlier today, or an earlier tick of this cron already ran for them).
+ *   4. Call generate-blog (impersonating the user via a dedicated
+ *      INTERNAL_FUNCTION_SECRET, not the service-role key — that key's
+ *      representation isn't guaranteed to stay in sync across independently
+ *      deployed functions reading it as an ambient env var) to write the
+ *      post — reuses the exact same generation pipeline (competitor
+ *      research, content intelligence, QA pass, quota check).
  *   5. Insert the result into blog_posts as a draft, identical to the manual flow.
  *
- * Designed to run once daily via pg_cron → net.http_post (see the migration
- * for the commented cron.schedule() call). Can also be triggered manually via
- * POST /daily-blog-generator, optionally scoped to one user with { user_id }.
+ * Can also be triggered manually via POST /daily-blog-generator, optionally
+ * scoped to one user with { user_id }.
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// Pinned (not floating @2): esm.sh's build of the latest 2.117.0 release is
+// currently broken (unresolvable auth-js submodule) — pin to the last known-
+// good release until that's fixed upstream.
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.116.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -69,7 +81,8 @@ serve(async (req) => {
 
   const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-  if (!SERVICE_ROLE_KEY || !SUPABASE_URL) {
+  const INTERNAL_FUNCTION_SECRET = Deno.env.get("INTERNAL_FUNCTION_SECRET");
+  if (!SERVICE_ROLE_KEY || !SUPABASE_URL || !INTERNAL_FUNCTION_SECRET) {
     return jsonResponse({ error: "Service role not configured" }, 500);
   }
 
@@ -120,9 +133,17 @@ serve(async (req) => {
 
     const alreadyPostedToday = new Set((todaysPosts ?? []).map((p) => p.user_id as string));
 
-    // ── 3. Generate today's post for each eligible user ──────────────────────
-    // Sequential, not parallel — generate-blog itself calls OpenAI/SerpApi/Firecrawl,
-    // and running many users concurrently would hammer those rate limits at once.
+    // ── 3. Generate today's post for ONE eligible user per invocation ────────
+    // generate-blog does SERP + scraping + two LLM passes per user, which is
+    // enough compute on its own that running it for multiple users inside a
+    // single invocation hits Supabase's per-invocation resource limit
+    // (WORKER_RESOURCE_LIMIT) once there's more than a couple of users due on
+    // the same run. Instead, each invocation does the cheap eligibility scan
+    // over every user, generates for the first one that's actually due, then
+    // returns — the cron fires every few minutes during the morning window
+    // (see the migration), so a handful of users each get processed within a
+    // few minutes of each other rather than one invocation trying to do all
+    // of them at once.
     let generated = 0, skippedAlreadyPosted = 0, skippedNoItemForDay = 0, skippedQuota = 0, failed = 0;
     const results: Array<{ user_id: string; status: string; detail?: string }> = [];
 
@@ -145,13 +166,13 @@ serve(async (req) => {
 
       try {
         const { data, error } = await admin.functions.invoke("generate-blog", {
-          headers: { Authorization: `Bearer ${SERVICE_ROLE_KEY}` },
+          headers: { Authorization: `Bearer ${INTERNAL_FUNCTION_SECRET}` },
           body: {
             user_id: userId,
             topic: todayItem.title,
             keywords: [todayItem.keyword, todayItem.long_tail_keyword].filter(Boolean).join(", "),
             tone: plan.tone || "professional",
-            targetWordCount: 1500,
+            targetWordCount: 2200,
             contentType: todayItem.type,
             contentPlanBrief: todayItem.description || "",
             niche: plan.niche || "",
@@ -162,6 +183,8 @@ serve(async (req) => {
         if (data?.error === "quota_exceeded") {
           skippedQuota++;
           results.push({ user_id: userId, status: "skipped_quota_exceeded" });
+          // Quota-skip is cheap (no generation happened) — keep scanning for
+          // another eligible user instead of ending the run on this one.
           continue;
         }
         if (data?.error) throw new Error(data.error);
@@ -173,9 +196,18 @@ serve(async (req) => {
           content: data.content || "",
           keywords: data.keywords || [todayItem.keyword],
           og_image_prompt: data.ogImagePrompt || "",
+          // generate-blog already measured these with the real scorer —
+          // persist them directly instead of leaving seo_score/seo_title/
+          // seo_description at their empty defaults for every auto-generated
+          // post (they previously only got set when a human opened EditPost).
+          seo_title: data.seoTitle || data.title || todayItem.title,
+          seo_description: data.seoDescription || data.excerpt || "",
+          seo_score: typeof data.seoScore === "number" ? data.seoScore : null,
           status: "draft",
         });
         if (insertError) throw insertError;
+
+        console.log(`[daily-blog-generator] Day ${todayDay} SEO score for user ${userId}: ${data.seoScore ?? "n/a"}/100`);
 
         generated++;
         results.push({ user_id: userId, status: "generated" });
@@ -187,8 +219,9 @@ serve(async (req) => {
         console.error(`[daily-blog-generator] Failed for user ${userId}:`, msg);
       }
 
-      // Small pacing gap between users to avoid bursting shared API rate limits.
-      await new Promise((r) => setTimeout(r, 500));
+      // One real generation (success or failure) is enough compute for this
+      // invocation — stop here and let the next cron tick pick up the rest.
+      break;
     }
 
     const summary = {

@@ -75,6 +75,13 @@ interface ExtractedAnalysis {
   topServices: string[];
   mainCta: string;
   trustAssets: string[];
+  // Content-generation & business-intelligence fields.
+  brandVoice: string;
+  valueProposition: string;
+  businessModel: string;
+  differentiators: string[];
+  teamExpertise: string[];
+  foundedYear: string;
 }
 
 function str(v: unknown, fallback = ""): string {
@@ -210,6 +217,12 @@ function extractAnalysis(rawContent: string): ExtractedAnalysis {
     topServices: strArray(parsed.topServices, 8),
     mainCta: str(parsed.mainCta),
     trustAssets: strArray(parsed.trustAssets, 8),
+    brandVoice: str(parsed.brandVoice),
+    valueProposition: str(parsed.valueProposition),
+    businessModel: str(parsed.businessModel),
+    differentiators: strArray(parsed.differentiators, 6),
+    teamExpertise: strArray(parsed.teamExpertise, 6),
+    foundedYear: str(parsed.foundedYear),
   };
 }
 
@@ -447,7 +460,13 @@ Analyze the website and return a JSON object with this exact structure:
   "regions": ["Geographic regions/markets this business appears to serve, at city/state/country level — empty array if the site gives no geographic signal"],
   "topServices": ["3-6 top services or products this business provides, most prominent first"],
   "mainCta": "The single primary call-to-action this business wants a visitor to take, e.g. 'Book a Free Demo' or 'Start Free Trial' — infer from buttons/headings if not stated outright",
-  "trustAssets": ["Trust signals found on the site: certifications, awards, client/customer counts, ratings, notable clients, press mentions — empty array if none found"]
+  "trustAssets": ["Trust signals found on the site: certifications, awards, client/customer counts, ratings, notable clients, press mentions — empty array if none found"],
+  "brandVoice": "2-5 words describing how this business actually writes, inferred from the real copy on the page — e.g. 'professional and authoritative', 'casual and witty', 'technical and detail-oriented'. Not a guess from the industry — read the actual sentences.",
+  "valueProposition": "1-2 sentence core 'why choose us' — the single main reason a visitor should pick this business over alternatives, stated or clearly implied on the site",
+  "businessModel": "One of: B2B SaaS, B2C e-commerce, B2B services/agency, Marketplace, B2B2C, Subscription/membership, or another short precise label if none of those fit — based on how the site actually sells",
+  "differentiators": ["2-5 concrete, specific things that set this business apart from competitors — not generic claims like 'great service', but specifics the site actually states (a methodology, a guarantee, an exclusive feature, a unique process)"],
+  "teamExpertise": ["1-4 concrete signals of the team's real experience/expertise/authority — e.g. 'Founded by former X engineers', '15+ years in Y industry', 'Certified Z practitioners' — this is an E-E-A-T signal, only include what the site actually states about the people behind it, empty array if the site says nothing about its team"],
+  "foundedYear": "The year this business was founded/established, if stated anywhere on the site — empty string if not mentioned"
 }
 
 Requirements:
@@ -458,8 +477,8 @@ Requirements:
 - Difficulty should reflect real competitiveness (most keywords for smaller sites should be low-medium)
 - Priority should consider business impact and ranking feasibility
 - Provide EXACTLY 5 distinct Ideal Customer Profiles (idealCustomerProfiles), each representing a genuinely different buyer segment for this specific business — not 5 minor variations of the same persona
-- For primaryICP, offers, regions, topServices, mainCta, and trustAssets: extract only what the page content actually supports. Do not invent specifics (like fake certifications or made-up regions) — return an empty array/string for anything not genuinely evidenced by the scraped content
-- If Services/Locations/Testimonials/Case Studies/Contact/About pages were crawled (see labeled sections above), prioritize them over the home page for the fields they naturally inform: Services page → topServices/offers, Locations page → regions, Testimonials/Case Studies pages → trustAssets, Contact page → mainCta, About page → description/primaryICP`;
+- For primaryICP, offers, regions, topServices, mainCta, trustAssets, brandVoice, valueProposition, businessModel, differentiators, teamExpertise, and foundedYear: extract only what the page content actually supports. Do not invent specifics (like fake certifications, made-up regions, or a fabricated founding year) — return an empty array/string for anything not genuinely evidenced by the scraped content
+- If Services/Locations/Testimonials/Case Studies/Contact/About pages were crawled (see labeled sections above), prioritize them over the home page for the fields they naturally inform: Services page → topServices/offers/differentiators, Locations page → regions, Testimonials/Case Studies pages → trustAssets, Contact page → mainCta, About page → description/primaryICP/valueProposition/teamExpertise/foundedYear`;
 
     const aiResp = await fetch(
       "https://api.openai.com/v1/chat/completions",

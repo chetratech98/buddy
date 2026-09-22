@@ -111,6 +111,11 @@ export const PlanItem = memo(function PlanItem({
                 {item.long_tail_keyword}
               </Badge>
             )}
+            {item.audience_persona && (
+              <Badge variant="secondary" className="text-xs">
+                {item.audience_persona}
+              </Badge>
+            )}
           </div>
 
           {/* Brief action buttons */}

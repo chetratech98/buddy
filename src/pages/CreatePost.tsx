@@ -423,6 +423,7 @@ const CreatePost = () => {
       tags,
       seo_title:          seoTitle,
       seo_description:    seoDescription,
+      seo_score:          seoScore?.total ?? null,
       og_image_prompt:    ogImagePrompt,
       scheduled_at:       scheduledAt?.toISOString() || null,
       published_at:       saveStatus === "published" ? new Date().toISOString() : null,

@@ -168,7 +168,7 @@ serve(async (req) => {
 
     await supabaseClient
       .from("blog_posts")
-      .update({ platform_status: platformStatus })
+      .update({ platform_status: platformStatus, canonical_url: wpData.link })
       .eq("id", postId);
 
     return new Response(
