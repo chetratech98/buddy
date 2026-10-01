@@ -17,22 +17,22 @@ const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
 const ResetPassword  = lazy(() => import("./pages/ResetPassword"));
 const AcceptInvite   = lazy(() => import("./pages/AcceptInvite"));
 const Profile        = lazy(() => import("./pages/Profile"));
-const Dashboard      = lazy(() => import("./pages/Analytics"));
+const Dashboard      = lazy(() => import("./pages/Dashboard"));
 const ContentCalendar= lazy(() => import("./pages/ContentCalendar"));
 const CreatePost     = lazy(() => import("./pages/CreatePost"));
 const Posts          = lazy(() => import("./pages/Posts"));
 const NotFound       = lazy(() => import("./pages/NotFound"));
-const GetStarted     = lazy(() => import("./pages/GetStarted"));
+const AnalyzeSite    = lazy(() => import("./pages/AnalyzeSite"));
 const ContentPlan    = lazy(() => import("./pages/ContentPlan"));
-const SeoAnalysis    = lazy(() => import("./pages/SeoAnalysis"));
+const SerpAnalysis   = lazy(() => import("./pages/SerpAnalysis"));
 const TodaysBlog     = lazy(() => import("./pages/TodaysBlog"));
 const Admin          = lazy(() => import("./pages/Admin"));
 const EditPost       = lazy(() => import("./pages/EditPost"));
 
 // Settings pages
 const OrgSettings    = lazy(() => import("./pages/settings/Organization"));
-const MembersSettings= lazy(() => import("./pages/settings/Members"));
-const SitesSettings  = lazy(() => import("./pages/settings/Sites"));
+const MembersSettings= lazy(() => import("./pages/settings/TeamMembers"));
+const SitesSettings  = lazy(() => import("./pages/settings/WordPressSites"));
 
 const PageLoader = () => (
   <div className="min-h-screen flex items-center justify-center bg-background">
@@ -75,7 +75,7 @@ const App = () => (
               <Route path="/invite/:token"    element={<AcceptInvite />} />
 
               {/* Protected Routes — require login */}
-              <Route path="/get-started"      element={<ProtectedRoute><GetStarted /></ProtectedRoute>} />
+              <Route path="/get-started"      element={<ProtectedRoute><AnalyzeSite /></ProtectedRoute>} />
               <Route path="/dashboard"        element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/profile"          element={<ProtectedRoute><Profile /></ProtectedRoute>} />
               {/* Billing was merged into Profile — keep old links/bookmarks working */}
@@ -85,7 +85,7 @@ const App = () => (
               <Route path="/posts"            element={<ProtectedRoute><Posts /></ProtectedRoute>} />
               <Route path="/posts/:id/edit"   element={<ProtectedRoute><EditPost /></ProtectedRoute>} />
               <Route path="/content-plan"     element={<ProtectedRoute><ContentPlan /></ProtectedRoute>} />
-              <Route path="/seo-analysis"     element={<ProtectedRoute><SeoAnalysis /></ProtectedRoute>} />
+              <Route path="/seo-analysis"     element={<ProtectedRoute><SerpAnalysis /></ProtectedRoute>} />
               <Route path="/todays-blog"      element={<ProtectedRoute><TodaysBlog /></ProtectedRoute>} />
 
               {/* Settings — require login */}

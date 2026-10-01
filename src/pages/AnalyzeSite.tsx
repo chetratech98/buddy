@@ -187,7 +187,7 @@ const ReadOnlyTagRow = ({ label, values }: { label: string; values: string[] }) 
   </div>
 );
 
-const GetStarted = () => {
+const AnalyzeSite = () => {
   const { user, loading } = useAuth();
   const [url, setUrl] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
@@ -1090,4 +1090,4 @@ const GetStarted = () => {
   );
 };
 
-export default GetStarted;
+export default AnalyzeSite;

@@ -229,7 +229,7 @@ const emptyBusinessContext: BusinessContext = {
   foundedYear: "",
 };
 
-const SeoAnalysis = () => {
+const SerpAnalysis = () => {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
@@ -1203,4 +1203,4 @@ const SeoAnalysis = () => {
   );
 };
 
-export default SeoAnalysis;
+export default SerpAnalysis;

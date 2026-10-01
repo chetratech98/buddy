@@ -27,7 +27,7 @@ const RoleIcon = ({ role }: { role: string }) => {
   return null;
 };
 
-const Members = () => {
+const TeamMembers = () => {
   const { user, currentOrg } = useAuth();
   const { toast } = useToast();
 
@@ -299,4 +299,4 @@ const Members = () => {
   );
 };
 
-export default Members;
+export default TeamMembers;

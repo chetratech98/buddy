@@ -80,7 +80,7 @@ interface RankingRow {
 // Component
 // ─────────────────────────────────────────────────────────────────────────────
 
-const Analytics = () => {
+const Dashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -286,7 +286,7 @@ const Analytics = () => {
         }))
       );
     } catch (err) {
-      console.error("Analytics fetch error:", err);
+      console.error("Dashboard fetch error:", err);
     } finally {
       setLoading(false);
     }
@@ -809,4 +809,4 @@ const Analytics = () => {
   );
 };
 
-export default Analytics;
+export default Dashboard;

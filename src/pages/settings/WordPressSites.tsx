@@ -22,7 +22,7 @@ interface Site {
   is_default: boolean;
 }
 
-const Sites = () => {
+const WordPressSites = () => {
   const { user, currentOrg } = useAuth();
   const { toast } = useToast();
 
@@ -292,4 +292,4 @@ const Sites = () => {
   );
 };
 
-export default Sites;
+export default WordPressSites;
