@@ -784,7 +784,7 @@ const Dashboard = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {[
             { icon: FileText,  label: "Create New Post",  desc: "Generate AI-powered blog content",    path: "/create-post"  },
-            { icon: TrendingUp,label: "SEO Analysis",     desc: "Analyze keywords and competitors",    path: "/seo-analysis" },
+            { icon: TrendingUp,label: "SERP Analysis",    desc: "Analyze keywords and competitors",    path: "/seo-analysis" },
             { icon: Calendar,  label: "Content Plan",     desc: "Generate a 30-day content calendar",  path: "/content-plan" },
           ].map(({ icon: Icon, label, desc, path }) => (
             <Card
