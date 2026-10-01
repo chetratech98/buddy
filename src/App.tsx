@@ -10,22 +10,22 @@ import { Loader2 } from "lucide-react";
 import { Analytics } from "@vercel/analytics/react";
 
 // Lazy-load all page components for code splitting
-const Index          = lazy(() => import("./pages/Index"));
+const Landing        = lazy(() => import("./pages/Landing"));
 const Auth           = lazy(() => import("./pages/Auth"));
 const VerifyEmail    = lazy(() => import("./pages/VerifyEmail"));
 const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
 const ResetPassword  = lazy(() => import("./pages/ResetPassword"));
 const AcceptInvite   = lazy(() => import("./pages/AcceptInvite"));
-const Profile        = lazy(() => import("./pages/Profile"));
+const Account        = lazy(() => import("./pages/Account"));
 const Dashboard      = lazy(() => import("./pages/Dashboard"));
 const ContentCalendar= lazy(() => import("./pages/ContentCalendar"));
 const CreatePost     = lazy(() => import("./pages/CreatePost"));
-const Posts          = lazy(() => import("./pages/Posts"));
+const ContentManager = lazy(() => import("./pages/ContentManager"));
 const NotFound       = lazy(() => import("./pages/NotFound"));
 const AnalyzeSite    = lazy(() => import("./pages/AnalyzeSite"));
 const ContentPlan    = lazy(() => import("./pages/ContentPlan"));
 const SerpAnalysis   = lazy(() => import("./pages/SerpAnalysis"));
-const TodaysBlog     = lazy(() => import("./pages/TodaysBlog"));
+const TodaysPost     = lazy(() => import("./pages/TodaysPost"));
 const Admin          = lazy(() => import("./pages/Admin"));
 const EditPost       = lazy(() => import("./pages/EditPost"));
 
@@ -66,7 +66,7 @@ const App = () => (
           <Suspense fallback={<PageLoader />}>
             <Routes>
               {/* Public Routes */}
-              <Route path="/"                 element={<Index />} />
+              <Route path="/"                 element={<Landing />} />
               <Route path="/auth"             element={<Auth />} />
               <Route path="/auth/callback"    element={<Auth />} />
               <Route path="/verify-email"     element={<VerifyEmail />} />
@@ -77,16 +77,16 @@ const App = () => (
               {/* Protected Routes — require login */}
               <Route path="/get-started"      element={<ProtectedRoute><AnalyzeSite /></ProtectedRoute>} />
               <Route path="/dashboard"        element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-              <Route path="/profile"          element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-              {/* Billing was merged into Profile — keep old links/bookmarks working */}
+              <Route path="/profile"          element={<ProtectedRoute><Account /></ProtectedRoute>} />
+              {/* Billing was merged into Profile/Account — keep old links/bookmarks working */}
               <Route path="/billing"          element={<Navigate to="/profile" replace />} />
               <Route path="/calendar"         element={<ProtectedRoute><ContentCalendar /></ProtectedRoute>} />
               <Route path="/create-post"      element={<ProtectedRoute><CreatePost /></ProtectedRoute>} />
-              <Route path="/posts"            element={<ProtectedRoute><Posts /></ProtectedRoute>} />
+              <Route path="/posts"            element={<ProtectedRoute><ContentManager /></ProtectedRoute>} />
               <Route path="/posts/:id/edit"   element={<ProtectedRoute><EditPost /></ProtectedRoute>} />
               <Route path="/content-plan"     element={<ProtectedRoute><ContentPlan /></ProtectedRoute>} />
               <Route path="/seo-analysis"     element={<ProtectedRoute><SerpAnalysis /></ProtectedRoute>} />
-              <Route path="/todays-blog"      element={<ProtectedRoute><TodaysBlog /></ProtectedRoute>} />
+              <Route path="/todays-blog"      element={<ProtectedRoute><TodaysPost /></ProtectedRoute>} />
 
               {/* Settings — require login */}
               <Route path="/settings/organization" element={<ProtectedRoute><OrgSettings /></ProtectedRoute>} />

@@ -46,7 +46,7 @@ const STATUS_META: Record<string, { label: string; icon: typeof Clock; colorClas
   published: { label: "Published", icon: CheckCircle, colorClass: "bg-[hsl(var(--success))]/10 text-[hsl(var(--success))]" },
 };
 
-const Posts = () => {
+const ContentManager = () => {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -319,4 +319,4 @@ const Posts = () => {
   );
 };
 
-export default Posts;
+export default ContentManager;

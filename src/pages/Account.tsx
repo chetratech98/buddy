@@ -218,7 +218,7 @@ function MediumSettings({ userId }: { userId: string }) {
 // Main page
 // ─────────────────────────────────────────────────────────────────────────────
 
-const Profile = () => {
+const Account = () => {
   const { user, loading: authLoading, signOut } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -824,4 +824,4 @@ const Profile = () => {
   );
 };
 
-export default Profile;
+export default Account;

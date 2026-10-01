@@ -43,7 +43,7 @@ interface ExistingPost {
   featured_image_url?: string | null;
 }
 
-const TodaysBlog = () => {
+const TodaysPost = () => {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -506,4 +506,4 @@ const TodaysBlog = () => {
   );
 };
 
-export default TodaysBlog;
+export default TodaysPost;

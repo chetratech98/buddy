@@ -7,7 +7,7 @@ import FAQ from "@/components/FAQ";
 import Footer from "@/components/Footer";
 import StickyCTA from "@/components/StickyCTA";
 
-const Index = () => {
+const Landing = () => {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
@@ -22,4 +22,4 @@ const Index = () => {
   );
 };
 
-export default Index;
+export default Landing;
