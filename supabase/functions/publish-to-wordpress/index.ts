@@ -4,6 +4,7 @@ import { isUrlSafeToFetch } from "../_shared/scraping.ts";
 import { resolveWpPassword } from "../_shared/wp-crypto.ts";
 import { uploadFeaturedImageToWordPress } from "../_shared/wp-media.ts";
 import { buildPostSchemas, schemaScriptTag } from "../_shared/schema.ts";
+import { resolveWpTermIds } from "../_shared/wp-taxonomy.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -111,12 +112,22 @@ serve(async (req) => {
     });
     const contentWithSchema = `${post.content}\n\n${schemaScriptTag(schemas)}`;
 
+    // Resolve the post's plain category/tags into WP taxonomy term IDs —
+    // creating the term in WP if it doesn't already exist. Never blocks
+    // publishing if a lookup/create fails.
+    const [categoryIds, tagIds] = await Promise.all([
+      resolveWpTermIds(post.category ? [post.category] : [], "categories", safeWpUrl, wp_username, wp_app_password),
+      resolveWpTermIds(post.tags, "tags", safeWpUrl, wp_username, wp_app_password),
+    ]);
+
     // Prepare WordPress post data
     const wpPost: WordPressPost = {
       title: post.title,
       content: contentWithSchema,
       status: post.status === 'published' ? 'publish' : 'draft',
       excerpt: post.excerpt || '',
+      ...(categoryIds.length > 0 && { categories: categoryIds }),
+      ...(tagIds.length > 0 && { tags: tagIds }),
     };
 
     if (post.scheduled_at && post.status === 'scheduled') {

@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveWpPassword, type WpCredentialProfile } from "../_shared/wp-crypto.ts";
 import { uploadFeaturedImageToWordPress } from "../_shared/wp-media.ts";
 import { buildPostSchemas, schemaScriptTag } from "../_shared/schema.ts";
+import { resolveWpTermIds } from "../_shared/wp-taxonomy.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -91,6 +92,16 @@ async function publishToWordPress(
   });
   const contentWithSchema = `${markdownToHtml(String(post.content ?? ""))}\n\n${schemaScriptTag(schemas)}`;
 
+  // Resolve the post's plain category/tags into WP taxonomy term IDs —
+  // creating the term in WP if it doesn't already exist. Never blocks
+  // publishing if a lookup/create fails.
+  const postCategory = typeof post.category === "string" ? post.category : null;
+  const postTags = Array.isArray(post.tags) ? (post.tags as string[]) : null;
+  const [categoryIds, tagIds] = await Promise.all([
+    resolveWpTermIds(postCategory ? [postCategory] : [], "categories", wp_url, wp_username, wp_app_password),
+    resolveWpTermIds(postTags, "tags", wp_url, wp_username, wp_app_password),
+  ]);
+
   const res = await fetchWithRetry(
     apiUrl,
     {
@@ -107,6 +118,8 @@ async function publishToWordPress(
         ...(post.seo_title       && { meta: { _yoast_wpseo_title: post.seo_title } }),
         ...(post.seo_description && { meta: { _yoast_wpseo_metadesc: post.seo_description } }),
         ...(featuredMediaId      && { featured_media: featuredMediaId }),
+        ...(categoryIds.length > 0 && { categories: categoryIds }),
+        ...(tagIds.length > 0      && { tags: tagIds }),
       }),
     }
   );
