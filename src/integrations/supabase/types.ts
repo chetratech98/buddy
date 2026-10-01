@@ -163,6 +163,7 @@ export type Database = {
           heldDuplicate: number
           id: string
           skippedAlreadyPosted: number
+          skippedNotPublishDay: number
           skippedNoItemForDay: number
           skippedQuota: number
           success: boolean
@@ -175,6 +176,7 @@ export type Database = {
           heldDuplicate?: number
           id?: string
           skippedAlreadyPosted?: number
+          skippedNotPublishDay?: number
           skippedNoItemForDay?: number
           skippedQuota?: number
           success?: boolean
@@ -187,6 +189,7 @@ export type Database = {
           heldDuplicate?: number
           id?: string
           skippedAlreadyPosted?: number
+          skippedNotPublishDay?: number
           skippedNoItemForDay?: number
           skippedQuota?: number
           success?: boolean
@@ -215,6 +218,7 @@ export type Database = {
           offers: string[]
           org_goals: string | null
           org_vision: string | null
+          publish_days_of_week: number[]
           regions: string[]
           role: string
           team_expertise: string[]
@@ -248,6 +252,7 @@ export type Database = {
           offers?: string[]
           org_goals?: string | null
           org_vision?: string | null
+          publish_days_of_week?: number[]
           regions?: string[]
           role?: string
           team_expertise?: string[]
@@ -281,6 +286,7 @@ export type Database = {
           offers?: string[]
           org_goals?: string | null
           org_vision?: string | null
+          publish_days_of_week?: number[]
           regions?: string[]
           role?: string
           team_expertise?: string[]

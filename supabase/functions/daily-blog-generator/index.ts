@@ -61,13 +61,35 @@ interface ContentPlanRow {
   created_at: string;
 }
 
-/** Mirrors TodaysBlog.tsx's day computation so manual and automated generation always agree. */
-function computeTodayDay(planCreatedAt: string, planLengthDays: number): number {
+/**
+ * Counts how many of a user's configured publish weekdays (e.g. [1,3,5]
+ * for Mon/Wed/Fri) have occurred strictly after `start`, up to and
+ * including `end` — used to advance through the plan only on eligible
+ * days instead of every calendar day, so a 3-day/week cadence spreads
+ * the plan's items across ~2.3x as many calendar days instead of
+ * silently skipping 4 of every 7 items.
+ */
+function countEligibleDaysBetween(start: Date, end: Date, publishDays: number[]): number {
+  const days = publishDays.length > 0 ? publishDays : [0, 1, 2, 3, 4, 5, 6];
+  const cur = new Date(start);
+  cur.setHours(0, 0, 0, 0);
+  const endDay = new Date(end);
+  endDay.setHours(0, 0, 0, 0);
+  let count = 0;
+  while (cur < endDay) {
+    cur.setDate(cur.getDate() + 1);
+    if (days.includes(cur.getDay())) count++;
+  }
+  return count;
+}
+
+/** Mirrors TodaysPost.tsx's day computation so manual and automated generation always agree. */
+function computeTodayDay(planCreatedAt: string, planLengthDays: number, publishDays: number[]): number {
   const created = new Date(planCreatedAt);
   const now = new Date();
-  const diffDays = Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
+  const eligibleDaysElapsed = countEligibleDaysBetween(created, now, publishDays);
   const cycle = planLengthDays > 0 ? planLengthDays : 30;
-  return (diffDays % cycle) + 1;
+  return (eligibleDaysElapsed % cycle) + 1;
 }
 
 serve(async (req) => {
@@ -136,6 +158,16 @@ serve(async (req) => {
 
     const alreadyPostedToday = new Set((todaysPosts ?? []).map((p) => p.user_id as string));
 
+    // ── 2b. Load each user's configured publish weekdays ────────────────────
+    const { data: cadenceProfiles } = await admin
+      .from("profiles")
+      .select("user_id, publish_days_of_week")
+      .in("user_id", userIds);
+    const publishDaysByUser = new Map<string, number[]>(
+      (cadenceProfiles ?? []).map((p) => [p.user_id as string, (p.publish_days_of_week as number[]) ?? [0, 1, 2, 3, 4, 5, 6]])
+    );
+    const todayWeekday = new Date().getDay();
+
     // ── 3. Generate today's post for ONE eligible user per invocation ────────
     // generate-blog does SERP + scraping + two LLM passes per user, which is
     // enough compute on its own that running it for multiple users inside a
@@ -147,7 +179,7 @@ serve(async (req) => {
     // (see the migration), so a handful of users each get processed within a
     // few minutes of each other rather than one invocation trying to do all
     // of them at once.
-    let generated = 0, skippedAlreadyPosted = 0, skippedNoItemForDay = 0, skippedQuota = 0, failed = 0, heldDuplicate = 0;
+    let generated = 0, skippedAlreadyPosted = 0, skippedNotPublishDay = 0, skippedNoItemForDay = 0, skippedQuota = 0, failed = 0, heldDuplicate = 0;
     const results: Array<{ user_id: string; status: string; detail?: string }> = [];
 
     for (const [userId, plan] of latestPlanByUser) {
@@ -157,7 +189,14 @@ serve(async (req) => {
         continue;
       }
 
-      const todayDay = computeTodayDay(plan.created_at, plan.days ?? 30);
+      const publishDays = publishDaysByUser.get(userId) ?? [0, 1, 2, 3, 4, 5, 6];
+      if (!publishDays.includes(todayWeekday)) {
+        skippedNotPublishDay++;
+        results.push({ user_id: userId, status: "skipped_not_publish_day" });
+        continue;
+      }
+
+      const todayDay = computeTodayDay(plan.created_at, plan.days ?? 30, publishDays);
       const items = Array.isArray(plan.items) ? (plan.items as ContentPlanItem[]) : [];
       const todayItem = items.find((item) => Number(item.day) === todayDay);
 
@@ -304,6 +343,7 @@ serve(async (req) => {
       usersWithPlans: latestPlanByUser.size,
       generated,
       skippedAlreadyPosted,
+      skippedNotPublishDay,
       skippedNoItemForDay,
       skippedQuota,
       failed,

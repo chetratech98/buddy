@@ -82,6 +82,7 @@ interface DailyBlogRun {
   usersWithPlans: number;
   generated: number;
   skippedAlreadyPosted: number;
+  skippedNotPublishDay: number;
   skippedNoItemForDay: number;
   skippedQuota: number;
   failed: number;
@@ -167,7 +168,7 @@ const Admin = () => {
         // Automation health — daily-blog-generator cron run log
         supabase
           .from("daily_blog_generator_runs")
-          .select("id, success, usersWithPlans, generated, skippedAlreadyPosted, skippedNoItemForDay, skippedQuota, failed, heldDuplicate, created_at")
+          .select("id, success, usersWithPlans, generated, skippedAlreadyPosted, skippedNotPublishDay, skippedNoItemForDay, skippedQuota, failed, heldDuplicate, created_at")
           .order("created_at", { ascending: false })
           .limit(30),
         // Automation health — rank-tracker cron run log (one row per user per tick)
@@ -716,6 +717,7 @@ const Admin = () => {
                         <TableHead>Users w/ Plans</TableHead>
                         <TableHead>Generated</TableHead>
                         <TableHead>Already Posted</TableHead>
+                        <TableHead>Not Publish Day</TableHead>
                         <TableHead>No Item</TableHead>
                         <TableHead>Quota Hit</TableHead>
                         <TableHead>Held (Dup)</TableHead>
@@ -725,7 +727,7 @@ const Admin = () => {
                     <TableBody>
                       {dailyBlogRuns.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={8} className="text-center text-gray-400 py-8">
+                          <TableCell colSpan={9} className="text-center text-gray-400 py-8">
                             No runs recorded yet.
                           </TableCell>
                         </TableRow>
@@ -738,6 +740,7 @@ const Admin = () => {
                               <Badge variant={run.generated > 0 ? "default" : "secondary"}>{run.generated}</Badge>
                             </TableCell>
                             <TableCell className="text-gray-400">{run.skippedAlreadyPosted}</TableCell>
+                            <TableCell className="text-gray-400">{run.skippedNotPublishDay ?? 0}</TableCell>
                             <TableCell className="text-gray-400">{run.skippedNoItemForDay}</TableCell>
                             <TableCell className="text-gray-400">{run.skippedQuota}</TableCell>
                             <TableCell className="text-gray-400">{run.heldDuplicate ?? 0}</TableCell>

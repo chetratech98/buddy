@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Camera, Save, Loader2, Target, Eye, ExternalLink,
-  Check, AlertCircle, Globe, LogOut, CreditCard, TrendingUp, CheckCircle2, Rocket,
+  Check, AlertCircle, Globe, LogOut, CreditCard, TrendingUp, CheckCircle2, Rocket, CalendarDays,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { PageShell } from "@/components/PageShell";
@@ -235,6 +235,8 @@ const Account = () => {
   const [uploading, setUploading] = useState(false);
   const [autoPublishEnabled, setAutoPublishEnabled] = useState(false);
   const [autoPublishSaving, setAutoPublishSaving] = useState(false);
+  const [publishDays, setPublishDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
+  const [publishDaysSaving, setPublishDaysSaving] = useState(false);
 
   // Billing & subscription state
   const [billingLoading, setBillingLoading] = useState(true);
@@ -357,7 +359,7 @@ const Account = () => {
   const fetchProfile = async () => {
     const { data, error } = await supabase
       .from("profiles")
-      .select("display_name, avatar_url, org_goals, org_vision, auto_publish_enabled, content_language")
+      .select("display_name, avatar_url, org_goals, org_vision, auto_publish_enabled, content_language, publish_days_of_week")
       .eq("user_id", user!.id)
       .maybeSingle();
 
@@ -368,8 +370,33 @@ const Account = () => {
       setOrgVision(data.org_vision ?? "");
       setAutoPublishEnabled(Boolean(data.auto_publish_enabled));
       setContentLanguage(data.content_language ?? "English");
+      setPublishDays((data.publish_days_of_week as number[] | null) ?? [0, 1, 2, 3, 4, 5, 6]);
     }
     setLoading(false);
+  };
+
+  const handleTogglePublishDay = async (day: number) => {
+    if (!user) return;
+    const previous = publishDays;
+    const next = previous.includes(day)
+      ? previous.filter((d) => d !== day)
+      : [...previous, day].sort();
+    if (next.length === 0) {
+      toast({ title: "Keep at least one publishing day", variant: "destructive" });
+      return;
+    }
+    setPublishDays(next); // optimistic
+    setPublishDaysSaving(true);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ publish_days_of_week: next })
+      .eq("user_id", user.id);
+
+    if (error) {
+      setPublishDays(previous);
+      toast({ title: "Couldn't update publishing days", description: error.message, variant: "destructive" });
+    }
+    setPublishDaysSaving(false);
   };
 
   const handleToggleAutoPublish = async (next: boolean) => {
@@ -815,6 +842,36 @@ const Account = () => {
                 />
               </div>
             </CardHeader>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CalendarDays size={18} /> Publishing Days
+              </CardTitle>
+              <CardDescription className="mt-1.5">
+                Choose which days of the week daily auto-generation runs — pick fewer days for a lighter
+                cadence (e.g. Mon/Wed/Fri for 3 posts a week) instead of every day.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-2">
+                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((label, day) => (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => handleTogglePublishDay(day)}
+                    disabled={publishDaysSaving}
+                    className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all duration-200 ${
+                      publishDays.includes(day)
+                        ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                        : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/20"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </CardContent>
           </Card>
           <WordPressSettings />
           {user && <MediumSettings userId={user.id} />}

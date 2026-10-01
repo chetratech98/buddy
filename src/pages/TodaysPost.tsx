@@ -43,6 +43,28 @@ interface ExistingPost {
   featured_image_url?: string | null;
 }
 
+const WEEKDAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/**
+ * Mirrors daily-blog-generator's countEligibleDaysBetween so the manual
+ * "Today's Blog" page and the automated cron always agree on which plan
+ * item is "due" — counts only the user's configured publish weekdays
+ * elapsed since the plan started, not every calendar day.
+ */
+function countEligibleDaysBetween(start: Date, end: Date, publishDays: number[]): number {
+  const days = publishDays.length > 0 ? publishDays : [0, 1, 2, 3, 4, 5, 6];
+  const cur = new Date(start);
+  cur.setHours(0, 0, 0, 0);
+  const endDay = new Date(end);
+  endDay.setHours(0, 0, 0, 0);
+  let count = 0;
+  while (cur < endDay) {
+    cur.setDate(cur.getDate() + 1);
+    if (days.includes(cur.getDay())) count++;
+  }
+  return count;
+}
+
 const TodaysPost = () => {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -66,6 +88,7 @@ const TodaysPost = () => {
   const [targetWordCount, setTargetWordCount] = useState(2500);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [niche, setNiche] = useState("");
+  const [publishDaysOfWeek, setPublishDaysOfWeek] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
 
   useEffect(() => {
     if (!user) return;
@@ -96,7 +119,7 @@ const TodaysPost = () => {
           .lte("created_at", todayEnd.toISOString()),
         supabase
           .from("profiles")
-          .select("niche, keywords, org_goals, org_vision")
+          .select("niche, keywords, org_goals, org_vision, publish_days_of_week")
           .eq("user_id", user!.id)
           .maybeSingle(),
       ]);
@@ -114,14 +137,16 @@ const TodaysPost = () => {
       }
 
       if (profileRes.data?.niche) setNiche(profileRes.data.niche);
+      const userPublishDays = (profileRes.data?.publish_days_of_week as number[] | undefined) ?? [0, 1, 2, 3, 4, 5, 6];
+      setPublishDaysOfWeek(userPublishDays);
 
       if (planRes.data) {
         const plan = planRes.data;
         const planCreatedAt = new Date(plan.created_at);
         const now = new Date();
-        const diffTime = now.getTime() - planCreatedAt.getTime();
-        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-        const todayDay = (diffDays % 30) + 1;
+        const eligibleDaysElapsed = countEligibleDaysBetween(planCreatedAt, now, userPublishDays);
+        const cycle = plan.days && plan.days > 0 ? plan.days : 30;
+        const todayDay = (eligibleDaysElapsed % cycle) + 1;
 
         const items = Array.isArray(plan.items) ? (plan.items as ContentPlanItem[]) : [];
         const todayContent = items.find((item) => Number(item.day) === todayDay);
@@ -297,6 +322,13 @@ const TodaysPost = () => {
         </div>
       </div>
 
+      {/* Today isn't a configured publish day — informational only, doesn't block manual generation */}
+      {!publishDaysOfWeek.includes(new Date().getDay()) && (todayItem || existingPost) && (
+        <div className="mb-6 rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+          Today isn't one of your scheduled publishing days ({publishDaysOfWeek.slice().sort().map((d) => WEEKDAY_NAMES[d]).join(", ")}) —
+          automatic generation will skip today, but you can still generate manually below.
+        </div>
+      )}
 
       {/* No content plan */}
       {!todayItem && !existingPost && (
