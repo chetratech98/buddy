@@ -19,6 +19,7 @@ import {
   scoreContent,
   scoreColor,
   scoreBg,
+  countWords,
   SeoScoreBreakdown,
 } from "@/lib/seo-scorer";
 
@@ -426,6 +427,7 @@ const CreatePost = () => {
       seo_title:          seoTitle,
       seo_description:    seoDescription,
       seo_score:          seoScore?.total ?? null,
+      word_count:         countWords(content),
       og_image_prompt:    ogImagePrompt,
       featured_image_url: featuredImageUrl,
       scheduled_at:       scheduledAt?.toISOString() || null,
@@ -997,7 +999,7 @@ const CreatePost = () => {
             {/* Content Quality Metrics */}
             {content && (
               <ContentQualityMetrics
-                wordCount={content.split(/\s+/).filter(w => w.length > 0).length}
+                wordCount={countWords(content)}
                 targetWordCount={targetWordCount}
                 hasFAQ={content.toLowerCase().includes('faq') || content.toLowerCase().includes('frequently asked')}
                 keywords={postKeywords}

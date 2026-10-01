@@ -49,7 +49,7 @@ function tokenize(text: string): string[] {
     .filter((w) => w.length > 2);
 }
 
-function countWords(text: string): number {
+export function countWords(text: string): number {
   return tokenize(text).length;
 }
 
