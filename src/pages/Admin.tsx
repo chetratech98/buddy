@@ -6,7 +6,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Users, FileText, Calendar, BarChart, DollarSign, ShieldCheck } from "lucide-react";
+import { Loader2, Users, FileText, Calendar, BarChart, DollarSign, ShieldCheck, Activity, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { PageShell } from "@/components/PageShell";
 import { ADMIN_ROLES, ROLE_LABELS, can, type AdminRole } from "@/lib/rbac";
@@ -75,6 +76,27 @@ interface AuditLog {
   created_at: string;
 }
 
+interface DailyBlogRun {
+  id: string;
+  success: boolean;
+  usersWithPlans: number;
+  generated: number;
+  skippedAlreadyPosted: number;
+  skippedNoItemForDay: number;
+  skippedQuota: number;
+  failed: number;
+  heldDuplicate: number;
+  created_at: string;
+}
+
+interface RankTrackerRun {
+  id: string;
+  user_id: string;
+  posts_checked: number;
+  keywords_checked: number;
+  created_at: string;
+}
+
 const Admin = () => {
   const { user, profile: myProfile } = useAuth();
   const { toast } = useToast();
@@ -93,6 +115,8 @@ const Admin = () => {
   const [serpAnalyses, setSerpAnalyses] = useState<any[]>([]);
   const [subscriptions, setSubscriptions] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [dailyBlogRuns, setDailyBlogRuns] = useState<DailyBlogRun[]>([]);
+  const [rankTrackerRuns, setRankTrackerRuns] = useState<RankTrackerRun[]>([]);
   const [changingRoleFor, setChangingRoleFor] = useState<string | null>(null);
 
   const fetchAdminData = async () => {
@@ -107,6 +131,8 @@ const Admin = () => {
         { data: plansData, error: plansError },
         { data: serpData, error: serpError },
         { data: auditData, error: auditError },
+        { data: dailyBlogRunsData, error: dailyBlogRunsError },
+        { data: rankTrackerRunsData, error: rankTrackerRunsError },
       ] = await Promise.all([
         // Profiles with subscription data — column-scoped to what the admin table actually renders
         supabase
@@ -138,6 +164,18 @@ const Admin = () => {
           .select("id, actor_user_id, actor_role, action, entity_type, entity_id, metadata, created_at")
           .order("created_at", { ascending: false })
           .limit(100),
+        // Automation health — daily-blog-generator cron run log
+        supabase
+          .from("daily_blog_generator_runs")
+          .select("id, success, usersWithPlans, generated, skippedAlreadyPosted, skippedNoItemForDay, skippedQuota, failed, heldDuplicate, created_at")
+          .order("created_at", { ascending: false })
+          .limit(30),
+        // Automation health — rank-tracker cron run log (one row per user per tick)
+        supabase
+          .from("rank_tracker_runs")
+          .select("id, user_id, posts_checked, keywords_checked, created_at")
+          .order("created_at", { ascending: false })
+          .limit(100),
       ]);
 
       if (profilesError) throw profilesError;
@@ -154,6 +192,12 @@ const Admin = () => {
 
       if (auditError) console.error("Error fetching audit logs:", auditError);
       setAuditLogs(auditData || []);
+
+      if (dailyBlogRunsError) console.error("Error fetching daily blog generator runs:", dailyBlogRunsError);
+      setDailyBlogRuns((dailyBlogRunsData as DailyBlogRun[]) || []);
+
+      if (rankTrackerRunsError) console.error("Error fetching rank tracker runs:", rankTrackerRunsError);
+      setRankTrackerRuns(rankTrackerRunsData || []);
 
       // Note: Subscriptions will be available after migration is applied
       // For now, extract subscription info from profiles table
@@ -230,6 +274,39 @@ const Admin = () => {
     () => new Map(profiles.map((p) => [p.user_id, p])),
     [profiles]
   );
+
+  // ── Automation health signals ────────────────────────────────────────────
+  // daily-blog-generator processes at most one user per tick by design, so
+  // "generated: 0" on any single run is completely normal once everyone due
+  // today has already been handled — that is NOT a failure signal on its
+  // own. What actually indicates trouble: the cron hasn't fired recently at
+  // all (the literal "cron jobs got disabled" incident this ever caught
+  // once already), or a full day's worth of ticks produced zero posts
+  // despite users actually having active plans.
+  const automationHealth = useMemo(() => {
+    const now = Date.now();
+    const HOUR = 60 * 60 * 1000;
+
+    const latestRun = dailyBlogRuns[0] ?? null;
+    const hoursSinceLastRun = latestRun ? (now - new Date(latestRun.created_at).getTime()) / HOUR : null;
+    const dailyBlogStale = hoursSinceLastRun === null || hoursSinceLastRun > 26;
+
+    const runsLast26h = dailyBlogRuns.filter((r) => (now - new Date(r.created_at).getTime()) / HOUR <= 26);
+    const generatedLast26h = runsLast26h.reduce((sum, r) => sum + (r.generated || 0), 0);
+    const failedLast26h = runsLast26h.reduce((sum, r) => sum + (r.failed || 0), 0);
+    const heldDuplicateLast26h = runsLast26h.reduce((sum, r) => sum + (r.heldDuplicate || 0), 0);
+    const dailyBlogIneffective = !dailyBlogStale && (latestRun?.usersWithPlans ?? 0) > 0 && generatedLast26h === 0;
+
+    const latestRankRun = rankTrackerRuns[0] ?? null;
+    const hoursSinceLastRankRun = latestRankRun ? (now - new Date(latestRankRun.created_at).getTime()) / HOUR : null;
+    const rankTrackerStale = hoursSinceLastRankRun === null || hoursSinceLastRankRun > 50;
+
+    return {
+      latestRun, hoursSinceLastRun, dailyBlogStale, dailyBlogIneffective,
+      generatedLast26h, failedLast26h, heldDuplicateLast26h,
+      latestRankRun, hoursSinceLastRankRun, rankTrackerStale,
+    };
+  }, [dailyBlogRuns, rankTrackerRuns]);
 
   if (loading) {
     return (
@@ -324,12 +401,18 @@ const Admin = () => {
 
         {/* Data Tables */}
         <Tabs defaultValue="users" className="w-full">
-          <TabsList className="grid w-full grid-cols-6 bg-gray-800/50">
+          <TabsList className="grid w-full grid-cols-7 bg-gray-800/50">
             <TabsTrigger value="users">Users</TabsTrigger>
             <TabsTrigger value="posts">Blog Posts</TabsTrigger>
             <TabsTrigger value="plans">Content Plans</TabsTrigger>
             <TabsTrigger value="seo">SEO Analysis</TabsTrigger>
             <TabsTrigger value="subscriptions">Subscriptions</TabsTrigger>
+            <TabsTrigger value="automation" className="relative">
+              Automation
+              {(automationHealth.dailyBlogStale || automationHealth.dailyBlogIneffective || automationHealth.rankTrackerStale) && (
+                <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-red-500" />
+              )}
+            </TabsTrigger>
             <TabsTrigger value="audit">Audit Logs</TabsTrigger>
           </TabsList>
 
@@ -569,6 +652,147 @@ const Admin = () => {
                           <TableCell className="font-mono text-xs">{sub.id.slice(0, 8)}...</TableCell>
                         </TableRow>
                       ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Automation Health Tab */}
+          <TabsContent value="automation" className="space-y-4">
+            {/* Health banners */}
+            {automationHealth.dailyBlogStale && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  <strong>daily-blog-generator hasn't run in {automationHealth.hoursSinceLastRun === null ? "any recorded time" : `${Math.round(automationHealth.hoursSinceLastRun)} hours`}.</strong>{" "}
+                  The cron job may be disabled or failing before it can log a run. Check pg_cron and the function logs.
+                </AlertDescription>
+              </Alert>
+            )}
+            {automationHealth.dailyBlogIneffective && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  <strong>The cron is running but generated 0 posts in the last 26 hours</strong>, despite {automationHealth.latestRun?.usersWithPlans} user(s) having an active content plan. Check for a systematic generate-blog failure or widespread quota exhaustion.
+                </AlertDescription>
+              </Alert>
+            )}
+            {automationHealth.rankTrackerStale && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  <strong>rank-tracker hasn't logged a run in {automationHealth.hoursSinceLastRankRun === null ? "any recorded time" : `${Math.round(automationHealth.hoursSinceLastRankRun)} hours`}.</strong>{" "}
+                  Expected to run daily — check pg_cron and SERP_API_KEY.
+                </AlertDescription>
+              </Alert>
+            )}
+            {!automationHealth.dailyBlogStale && !automationHealth.dailyBlogIneffective && !automationHealth.rankTrackerStale && (
+              <Alert className="border-green-500/30 bg-green-500/5">
+                <CheckCircle2 className="h-4 w-4 text-green-400" />
+                <AlertDescription className="text-green-400">
+                  Both automations are reporting recent, active runs.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            <Card className="bg-gray-900/50 border-gray-700">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-purple-400" />
+                  Daily Blog Generator
+                </CardTitle>
+                <CardDescription>
+                  Last {automationHealth.generatedLast26h} post(s) generated, {automationHealth.failedLast26h} failure(s), {automationHealth.heldDuplicateLast26h} held for duplicate review — trailing 26h
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Run Time</TableHead>
+                        <TableHead>Users w/ Plans</TableHead>
+                        <TableHead>Generated</TableHead>
+                        <TableHead>Already Posted</TableHead>
+                        <TableHead>No Item</TableHead>
+                        <TableHead>Quota Hit</TableHead>
+                        <TableHead>Held (Dup)</TableHead>
+                        <TableHead>Failed</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {dailyBlogRuns.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center text-gray-400 py-8">
+                            No runs recorded yet.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        dailyBlogRuns.map((run) => (
+                          <TableRow key={run.id}>
+                            <TableCell className="text-xs whitespace-nowrap">{new Date(run.created_at).toLocaleString()}</TableCell>
+                            <TableCell>{run.usersWithPlans}</TableCell>
+                            <TableCell>
+                              <Badge variant={run.generated > 0 ? "default" : "secondary"}>{run.generated}</Badge>
+                            </TableCell>
+                            <TableCell className="text-gray-400">{run.skippedAlreadyPosted}</TableCell>
+                            <TableCell className="text-gray-400">{run.skippedNoItemForDay}</TableCell>
+                            <TableCell className="text-gray-400">{run.skippedQuota}</TableCell>
+                            <TableCell className="text-gray-400">{run.heldDuplicate ?? 0}</TableCell>
+                            <TableCell>
+                              {run.failed > 0 ? <Badge variant="destructive">{run.failed}</Badge> : <span className="text-gray-400">0</span>}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-gray-900/50 border-gray-700">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-purple-400" />
+                  Rank Tracker
+                </CardTitle>
+                <CardDescription>
+                  {automationHealth.latestRankRun
+                    ? `Last check: ${new Date(automationHealth.latestRankRun.created_at).toLocaleString()}`
+                    : "No runs recorded yet."}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Run Time</TableHead>
+                        <TableHead>User</TableHead>
+                        <TableHead>Posts Checked</TableHead>
+                        <TableHead>Keywords Checked</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {rankTrackerRuns.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center text-gray-400 py-8">
+                            No runs recorded yet.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        rankTrackerRuns.slice(0, 20).map((run) => (
+                          <TableRow key={run.id}>
+                            <TableCell className="text-xs whitespace-nowrap">{new Date(run.created_at).toLocaleString()}</TableCell>
+                            <TableCell>{profilesByUserId.get(run.user_id)?.display_name || run.user_id.slice(0, 8) + "..."}</TableCell>
+                            <TableCell>{run.posts_checked}</TableCell>
+                            <TableCell>{run.keywords_checked}</TableCell>
+                          </TableRow>
+                        ))
+                      )}
                     </TableBody>
                   </Table>
                 </div>

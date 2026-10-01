@@ -131,15 +131,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUser(session?.user ?? null);
 
       if (session?.user) {
-        // Defer to avoid Supabase deadlock on auth state change
-        setTimeout(() => loadUserData(session.user.id), 0);
+        // Defer to avoid Supabase deadlock on auth state change. loading
+        // must stay true until loadUserData actually resolves — setting it
+        // false immediately here left a window where loading was false but
+        // profile was still null, which made every requireAdmin route (and
+        // anything else gated on profile) redirect away before the real
+        // profile ever arrived.
+        setTimeout(() => {
+          loadUserData(session.user.id).finally(() => setLoading(false));
+        }, 0);
       } else {
         setProfile(null);
         setOrganizations([]);
         setCurrentOrg(null);
+        setLoading(false);
       }
-
-      setLoading(false);
     });
 
     return () => subscription.unsubscribe();

@@ -155,6 +155,45 @@ export type Database = {
         }
         Relationships: []
       }
+      daily_blog_generator_runs: {
+        Row: {
+          created_at: string
+          failed: number
+          generated: number
+          heldDuplicate: number
+          id: string
+          skippedAlreadyPosted: number
+          skippedNoItemForDay: number
+          skippedQuota: number
+          success: boolean
+          usersWithPlans: number
+        }
+        Insert: {
+          created_at?: string
+          failed?: number
+          generated?: number
+          heldDuplicate?: number
+          id?: string
+          skippedAlreadyPosted?: number
+          skippedNoItemForDay?: number
+          skippedQuota?: number
+          success?: boolean
+          usersWithPlans?: number
+        }
+        Update: {
+          created_at?: string
+          failed?: number
+          generated?: number
+          heldDuplicate?: number
+          id?: string
+          skippedAlreadyPosted?: number
+          skippedNoItemForDay?: number
+          skippedQuota?: number
+          success?: boolean
+          usersWithPlans?: number
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           auto_publish_enabled: boolean
@@ -251,6 +290,30 @@ export type Database = {
           wp_app_password?: string | null
           wp_url?: string | null
           wp_username?: string | null
+        }
+        Relationships: []
+      }
+      rank_tracker_runs: {
+        Row: {
+          created_at: string
+          id: string
+          keywords_checked: number
+          posts_checked: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          keywords_checked?: number
+          posts_checked?: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          keywords_checked?: number
+          posts_checked?: number
+          user_id?: string
         }
         Relationships: []
       }
