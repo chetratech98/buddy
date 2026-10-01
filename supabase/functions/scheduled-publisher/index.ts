@@ -4,6 +4,7 @@ import { resolveWpPassword, type WpCredentialProfile } from "../_shared/wp-crypt
 import { uploadFeaturedImageToWordPress } from "../_shared/wp-media.ts";
 import { buildPostSchemas, schemaScriptTag } from "../_shared/schema.ts";
 import { resolveWpTermIds } from "../_shared/wp-taxonomy.ts";
+import { publishToMedium } from "../_shared/medium-publish.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -131,57 +132,6 @@ async function publishToWordPress(
 
   const data = await res.json();
   return { wordpressId: data.id, wordpressUrl: data.link };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Medium publisher  (https://github.com/Medium/medium-api-docs)
-// ─────────────────────────────────────────────────────────────────────────────
-async function publishToMedium(
-  post: Record<string, unknown>,
-  profile: Record<string, string>
-): Promise<{ mediumId: string; mediumUrl: string }> {
-  const { medium_integration_token, medium_author_id } = profile;
-  if (!medium_integration_token || !medium_author_id) {
-    throw new Error("Medium credentials incomplete — token and author ID are required");
-  }
-
-  const tagsArray = Array.isArray(post.tags)
-    ? (post.tags as string[]).slice(0, 5)
-    : [];
-
-  // Medium has no separate "featured image" field — the standard way to get
-  // a lead image on a Medium post is a markdown image as the first line.
-  const mediumContent = typeof post.featured_image_url === "string" && post.featured_image_url
-    ? `![](${post.featured_image_url})\n\n${post.content ?? ""}`
-    : String(post.content ?? "");
-
-  const res = await fetchWithRetry(
-    `https://api.medium.com/v1/users/${medium_author_id}/posts`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${medium_integration_token}`,
-      },
-      body: JSON.stringify({
-        title:         post.title,
-        contentFormat: "markdown",
-        content:       mediumContent,
-        tags:          tagsArray,
-        publishStatus: "public",
-        ...(post.canonical_url && { canonicalUrl: post.canonical_url }),
-      }),
-    }
-  );
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Medium API ${res.status}: ${errText.slice(0, 300)}`);
-  }
-
-  const data = await res.json();
-  const mediumPost = data.data;
-  return { mediumId: mediumPost.id, mediumUrl: mediumPost.url };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

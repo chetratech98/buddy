@@ -27,6 +27,12 @@ serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  // Hoisted so the catch block can log which post failed without re-reading
+  // req.json() a second time — the body stream can only be consumed once,
+  // so that second read used to throw (swallowed by its own try/catch),
+  // meaning a failed publish was never actually written to publishing_logs.
+  let postId: string | undefined;
+
   try {
     const supabaseClient = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
@@ -47,7 +53,7 @@ serve(async (req) => {
       throw new Error("Unauthorized");
     }
 
-    const { postId } = await req.json();
+    ({ postId } = await req.json());
 
     if (!postId) {
       throw new Error("Post ID is required");
@@ -215,7 +221,6 @@ serve(async (req) => {
         }
       );
 
-      const { postId } = await req.json();
       if (postId) {
         await supabaseClient.from("publishing_logs").insert({
           post_id: postId,

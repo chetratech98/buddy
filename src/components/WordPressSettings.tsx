@@ -78,13 +78,20 @@ export const WordPressSettings = () => {
 
     setSaving(true);
     try {
+      // Send whatever password the user has typed, regardless of
+      // changingPassword — that flag only controls whether the input is
+      // shown or replaced with a "stored securely" placeholder. Gating the
+      // actual network payload on it meant a first-time connection (no
+      // stored password yet, so the "change password" toggle never even
+      // appears) silently never sent the password at all.
+      const passwordToSend = wpAppPassword.trim();
+
       // Credentials are saved via Edge Function so the password is encrypted before DB write
       const { data, error } = await supabase.functions.invoke('save-wordpress-credentials', {
         body: {
           wpUrl: wpUrl.trim(),
           wpUsername: wpUsername.trim(),
-          // Only send password if user explicitly typed a new one
-          wpAppPassword: changingPassword ? wpAppPassword.trim() : undefined,
+          wpAppPassword: passwordToSend ? passwordToSend : undefined,
         },
       });
 
@@ -93,7 +100,7 @@ export const WordPressSettings = () => {
 
       toast({ title: 'Settings saved', description: 'WordPress credentials updated securely.' });
       setTestResult(null);
-      if (changingPassword) {
+      if (passwordToSend) {
         setHasStoredPassword(true);
         setChangingPassword(false);
         setWpAppPassword('');
@@ -136,8 +143,11 @@ export const WordPressSettings = () => {
         body: {
           wpUrl: wpUrl.trim(),
           wpUsername: wpUsername.trim(),
-          // If user is typing a new password, send it for testing; otherwise let server use stored
-          wpAppPassword: changingPassword && wpAppPassword.trim() ? wpAppPassword.trim() : undefined,
+          // Send whatever password is typed (same fix as handleSave above —
+          // changingPassword only gates UI visibility, not whether a typed
+          // password should actually be used); otherwise let the server use
+          // the already-stored one.
+          wpAppPassword: wpAppPassword.trim() ? wpAppPassword.trim() : undefined,
         },
       });
 

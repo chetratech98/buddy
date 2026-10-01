@@ -22,6 +22,7 @@ import {
   countWords,
   SeoScoreBreakdown,
 } from "@/lib/seo-scorer";
+import { publishPostNow, describePublishResult } from "@/lib/publishNow";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -436,9 +437,28 @@ const CreatePost = () => {
       platform_medium:    platformMedium,
       platform_status:    {},
     };
-    const { error } = await supabase.from("blog_posts").insert([postData]);
+    const { data: savedPost, error } = await supabase.from("blog_posts").insert([postData]).select("id").single();
     if (error) {
       toast({ title: "Save failed", description: error.message, variant: "destructive" });
+      setSaving(false);
+      return;
+    }
+
+    // "Publish Now" (immediate, not scheduled) with a platform toggled on
+    // actually has to deliver to that platform — saving the row alone only
+    // marks it published in our own system.
+    if (saveStatus === "published" && (platformWordpress || platformMedium)) {
+      try {
+        const result = await publishPostNow(savedPost.id);
+        const { title: toastTitle, description, hasFailure } = describePublishResult(result);
+        toast({ title: toastTitle, description, variant: hasFailure ? "destructive" : "default" });
+      } catch (publishErr) {
+        toast({
+          title: "Saved, but publishing failed",
+          description: publishErr instanceof Error ? publishErr.message : "Unknown error",
+          variant: "destructive",
+        });
+      }
     } else {
       const messages: Record<string, string> = {
         draft:     "Draft saved",
@@ -447,8 +467,8 @@ const CreatePost = () => {
         published: "Post published!",
       };
       toast({ title: messages[saveStatus] || "Saved" });
-      navigate("/posts");
     }
+    navigate("/posts");
     setSaving(false);
   };
 
