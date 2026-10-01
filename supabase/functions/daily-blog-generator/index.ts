@@ -34,6 +34,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // good release until that's fixed upstream.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.116.0";
 import { hasWordPressCredentials, type WpCredentialProfile } from "../_shared/wp-crypto.ts";
+import { checkDuplicate } from "../_shared/duplicate-check.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -83,6 +84,7 @@ serve(async (req) => {
   const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
   const INTERNAL_FUNCTION_SECRET = Deno.env.get("INTERNAL_FUNCTION_SECRET");
+  const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
   if (!SERVICE_ROLE_KEY || !SUPABASE_URL || !INTERNAL_FUNCTION_SECRET) {
     return jsonResponse({ error: "Service role not configured" }, 500);
   }
@@ -145,7 +147,7 @@ serve(async (req) => {
     // (see the migration), so a handful of users each get processed within a
     // few minutes of each other rather than one invocation trying to do all
     // of them at once.
-    let generated = 0, skippedAlreadyPosted = 0, skippedNoItemForDay = 0, skippedQuota = 0, failed = 0;
+    let generated = 0, skippedAlreadyPosted = 0, skippedNoItemForDay = 0, skippedQuota = 0, failed = 0, heldDuplicate = 0;
     const results: Array<{ user_id: string; status: string; detail?: string }> = [];
 
     for (const [userId, plan] of latestPlanByUser) {
@@ -190,13 +192,42 @@ serve(async (req) => {
         }
         if (data?.error) throw new Error(data.error);
 
+        // ── Duplicate-topic safety net ───────────────────────────────────────
+        // The content plan was deduped once, at plan-creation time, against
+        // whatever posts existed back then — and the writer has creative
+        // freedom, so the actual generated title can still drift into a
+        // near-duplicate of something published since. Check-duplicate's
+        // same ML similarity check already catches this interactively; this
+        // runs it on the real generated output before deciding whether this
+        // post is eligible to skip human review via auto-publish.
+        let isNearDuplicate = false;
+        let duplicateDetail: string | undefined;
+        if (OPENAI_API_KEY) {
+          try {
+            const dupResult = await checkDuplicate(
+              admin,
+              userId,
+              { title: data.title || todayItem.title, topic: todayItem.title, keyword: todayItem.keyword },
+              OPENAI_API_KEY
+            );
+            isNearDuplicate = dupResult.hasDuplicate;
+            if (isNearDuplicate) {
+              duplicateDetail = `${Math.round(dupResult.maxSimilarity * 100)}% similar to "${dupResult.topMatches[0]?.title ?? "an existing post"}"`;
+              console.log(`[daily-blog-generator] Day ${todayDay} near-duplicate detected for user ${userId}: ${duplicateDetail} — holding as draft regardless of auto-publish setting`);
+            }
+          } catch (dupErr) {
+            console.warn(`[daily-blog-generator] Duplicate check failed for user ${userId}, proceeding without it:`, dupErr);
+          }
+        }
+
         // ── Auto-publish eligibility ────────────────────────────────────────
         // A generated post only skips the draft stage and gets scheduled for
         // immediate publish (picked up by the scheduled-publisher cron within
-        // ~5 minutes) when the user has explicitly opted in AND has at least
-        // one platform fully connected. Anyone who hasn't opted in keeps
-        // today's behavior: a draft in Posts that a human reviews and
-        // publishes themselves.
+        // ~5 minutes) when the user has explicitly opted in, has at least one
+        // platform fully connected, AND the post isn't a detected near-
+        // duplicate. Anyone who doesn't meet all three keeps today's
+        // behavior: a draft in Posts that a human reviews and publishes
+        // themselves.
         const { data: publishProfile } = await admin
           .from("profiles")
           .select("auto_publish_enabled, wp_url, wp_username, wp_app_password, wp_app_password_enc, medium_integration_token, medium_author_id")
@@ -205,7 +236,7 @@ serve(async (req) => {
 
         const hasWordPress = publishProfile ? hasWordPressCredentials(publishProfile as WpCredentialProfile) : false;
         const hasMedium = Boolean(publishProfile?.medium_integration_token && publishProfile?.medium_author_id);
-        const autoPublish = Boolean(publishProfile?.auto_publish_enabled) && (hasWordPress || hasMedium);
+        const autoPublish = Boolean(publishProfile?.auto_publish_enabled) && (hasWordPress || hasMedium) && !isNearDuplicate;
 
         const { error: insertError } = await admin.from("blog_posts").insert({
           user_id: userId,
@@ -233,10 +264,15 @@ serve(async (req) => {
         });
         if (insertError) throw insertError;
 
-        console.log(`[daily-blog-generator] Day ${todayDay} SEO score for user ${userId}: ${data.seoScore ?? "n/a"}/100${autoPublish ? " | auto-publish: scheduled" : ""}`);
+        console.log(`[daily-blog-generator] Day ${todayDay} SEO score for user ${userId}: ${data.seoScore ?? "n/a"}/100${autoPublish ? " | auto-publish: scheduled" : ""}${isNearDuplicate ? " | held: near-duplicate" : ""}`);
 
         generated++;
-        results.push({ user_id: userId, status: "generated" });
+        if (isNearDuplicate) heldDuplicate++;
+        results.push(
+          isNearDuplicate
+            ? { user_id: userId, status: "generated_held_duplicate", detail: duplicateDetail }
+            : { user_id: userId, status: "generated" }
+        );
         console.log(`[daily-blog-generator] Day ${todayDay} post generated for user ${userId}: "${todayItem.title}"`);
       } catch (e) {
         failed++;
@@ -258,6 +294,7 @@ serve(async (req) => {
       skippedNoItemForDay,
       skippedQuota,
       failed,
+      heldDuplicate,
     };
 
     await admin.from("daily_blog_generator_runs").insert(summary);
