@@ -325,6 +325,7 @@ serve(async (req) => {
     const contentType       = typeof body.contentType === "string" ? body.contentType.trim() : "blog";
     const contentPlanBrief  = typeof body.contentPlanBrief === "string" ? body.contentPlanBrief.trim().slice(0, 1000) : "";
     const niche             = typeof body.niche === "string" ? body.niche.trim().slice(0, 200) : "";
+    const language          = typeof body.language === "string" && body.language.trim() ? body.language.trim().slice(0, 100) : "English";
 
     if (!topic) return jsonResponse({ error: "Topic is required" }, 400);
 
@@ -468,7 +469,11 @@ ${contentGaps.map((gap: string) => `- ${gap}`).join('\n')}` : ''}
 - Dominant format: ${contentIntelligence.contentBenchmark?.dominantContentType || 'guide'}`;
     }
 
-    const systemPrompt = `You are an expert SEO content writer with deep knowledge of Google's E-E-A-T principles (Experience, Expertise, Authoritativeness, Trust). You write comprehensive, data-driven blog posts that outrank competitors.
+    const languageInstruction = language.toLowerCase() !== "english"
+      ? `\n\nCRITICAL LANGUAGE REQUIREMENT: Write the ENTIRE article — title, meta description, all body content, and every FAQ question and answer — in ${language}. Do not include any English text unless it's a proper noun or brand name with no natural translation. End each FAQ question with whatever question-mark character is standard in ${language} (e.g. "？" for Chinese/Japanese, "؟" for Arabic, "?" for most others).`
+      : "";
+
+    const systemPrompt = `You are an expert SEO content writer with deep knowledge of Google's E-E-A-T principles (Experience, Expertise, Authoritativeness, Trust). You write comprehensive, data-driven blog posts that outrank competitors.${languageInstruction}
 
 This content will be scored by a deterministic SEO checker with these EXACT, non-negotiable rules — every one of them affects the score, so treat all of them as hard requirements, not suggestions:
 - WORD COUNT: at least 2,000 words (target ${intelligenceWordCount}, ±10%). Under 2,000 loses significant points.
@@ -527,7 +532,7 @@ JSON format:
 TOPIC: ${topic}
 ${niche ? `SITE NICHE: ${niche}` : ""}
 ${keywords ? `TARGET KEYWORDS: ${keywords}` : ""}
-TONE: ${intelligenceTone}
+${language.toLowerCase() !== "english" ? `LANGUAGE: ${language} — the entire article must be written in ${language}, not English\n` : ""}TONE: ${intelligenceTone}
 CONTENT FORMAT: ${contentType.toUpperCase()}
 TARGET LENGTH: ${intelligenceWordCount} words
 ${contentPlanBrief ? `\nCONTENT PLAN BRIEF (use this to shape the angle, audience, and outcome):\n${contentPlanBrief}\n` : ""}
@@ -591,6 +596,7 @@ EXPAND this post to ${targetWordCount} words by:
 5. Adding a conclusion with actionable next steps
 6. Include real-world examples, statistics, case studies, and best practices
 
+${language.toLowerCase() !== "english" ? `\nThis post is written in ${language} — keep all added content in ${language}, never translate to English.\n` : ""}
 Current post:
 ${JSON.stringify(post)}
 
@@ -600,7 +606,7 @@ The content must be at least ${targetWordCount} words.`;
       const expandedRaw = await callOpenAI(
         OPENAI_API_KEY,
         [
-          { role: "system", content: "You are an expert SEO content editor who expands and enriches blog posts while maintaining quality and flow. Return ONLY valid JSON." },
+          { role: "system", content: `You are an expert SEO content editor who expands and enriches blog posts while maintaining quality and flow. Return ONLY valid JSON.${language.toLowerCase() !== "english" ? ` The post is written in ${language} — keep all added content in ${language}.` : ""}` },
           { role: "user",   content: expansionPrompt },
         ],
         0.6
@@ -640,9 +646,9 @@ The content must be at least ${targetWordCount} words.`;
     let scoreBreakdown = scoreFor(post);
     console.log(`[generate-blog] Pre-QA SEO score: ${scoreBreakdown.total}/100 (${scoreBreakdown.grade})`);
 
-    const reviewSystemPrompt = `You are a strict SEO QA editor. Review and fix the blog post if needed. Return ONLY valid JSON.`;
+    const reviewSystemPrompt = `You are a strict SEO QA editor. Review and fix the blog post if needed. Return ONLY valid JSON.${language.toLowerCase() !== "english" ? ` The post is written in ${language} — keep all edits in ${language}, never translate to English.` : ""}`;
     const reviewUserPrompt = `Review this blog post for the topic "${topic}" and keywords "${keywords}".
-
+${language.toLowerCase() !== "english" ? `\nThis post must remain entirely in ${language} — do not translate any part of it to English.\n` : ""}
 FIX ANY OF THESE ISSUES (if present):
 1. Title must be 50–70 chars, contain the primary keyword, and be SEO-optimized — fix if not
 2. Excerpt must be 120–160 chars — fix if not
@@ -650,7 +656,7 @@ FIX ANY OF THESE ISSUES (if present):
 4. Target keywords ("${keywords}") must appear naturally in title, at least one H2/H3 heading, and throughout body
 5. Tone must be consistently "${tone}"
 6. No incomplete sentences, no placeholder text like [INSERT X HERE]
-7. FAQ section must exist with 5+ questions, each as its own H3 heading ending in "?" (not "Q:"/"A:" pairs)
+7. FAQ section must exist with 5+ questions, each as its own H3 heading ending in a question mark (not "Q:"/"A:" pairs)
 8. Content type is "${contentType}" — verify the structure matches: how-to uses numbered steps, listicle has individual H2s per item, case-study has Results section, opinion takes a clear stance
 9. Verify "wordCount" field reflects actual content word count
 10. Keep "ogImagePrompt" as-is unless it's missing or empty — it is not affected by content edits
@@ -693,7 +699,7 @@ If everything is correct, return unchanged.`;
       console.log(`[generate-blog] Score still ${scoreBreakdown.total}/100 — running one targeted fix pass...`);
       const fixPrompt = `This blog post scored ${scoreBreakdown.total}/100 on our SEO checker. Fix ONLY these specific measured issues, without otherwise rewriting the post:
 ${scoreBreakdown.suggestions.map((s) => `- ${s}`).join("\n")}
-
+${language.toLowerCase() !== "english" ? `\nThis post is written in ${language} — keep all fixes in ${language}, never translate to English.\n` : ""}
 Current post:
 ${JSON.stringify(post)}
 
@@ -703,7 +709,7 @@ Return ONLY valid JSON in the same format: { title, excerpt, content, keywords, 
         const fixedRaw = await callOpenAI(
           OPENAI_API_KEY,
           [
-            { role: "system", content: "You are a precise SEO editor making surgical, targeted fixes to an existing draft. Return ONLY valid JSON." },
+            { role: "system", content: `You are a precise SEO editor making surgical, targeted fixes to an existing draft. Return ONLY valid JSON.${language.toLowerCase() !== "english" ? ` The post is written in ${language} — keep all edits in ${language}.` : ""}` },
             { role: "user", content: fixPrompt },
           ],
           0.3

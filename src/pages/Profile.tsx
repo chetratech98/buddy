@@ -229,6 +229,7 @@ const Profile = () => {
   const [avatarUrl,   setAvatarUrl]   = useState<string | null>(null);
   const [orgGoals,    setOrgGoals]    = useState("");
   const [orgVision,   setOrgVision]   = useState("");
+  const [contentLanguage, setContentLanguage] = useState("English");
   const [loading,  setLoading]  = useState(true);
   const [saving,   setSaving]   = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -356,7 +357,7 @@ const Profile = () => {
   const fetchProfile = async () => {
     const { data, error } = await supabase
       .from("profiles")
-      .select("display_name, avatar_url, org_goals, org_vision, auto_publish_enabled")
+      .select("display_name, avatar_url, org_goals, org_vision, auto_publish_enabled, content_language")
       .eq("user_id", user!.id)
       .maybeSingle();
 
@@ -366,6 +367,7 @@ const Profile = () => {
       setOrgGoals(data.org_goals ?? "");
       setOrgVision(data.org_vision ?? "");
       setAutoPublishEnabled(Boolean(data.auto_publish_enabled));
+      setContentLanguage(data.content_language ?? "English");
     }
     setLoading(false);
   };
@@ -398,7 +400,7 @@ const Profile = () => {
     setSaving(true);
     const { error } = await supabase
       .from("profiles")
-      .update({ display_name: displayName, org_goals: orgGoals, org_vision: orgVision })
+      .update({ display_name: displayName, org_goals: orgGoals, org_vision: orgVision, content_language: contentLanguage.trim() || "English" })
       .eq("user_id", user!.id);
 
     if (error) {
@@ -535,6 +537,30 @@ const Profile = () => {
               rows={4}
               className="input-base resize-none"
             />
+          </div>
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium mb-2">
+              <Globe size={16} className="text-primary" /> Content Language
+            </label>
+            <input
+              type="text"
+              list="profile-language-options"
+              value={contentLanguage}
+              onChange={(e) => setContentLanguage(e.target.value)}
+              placeholder="English"
+              className="input-base"
+            />
+            <datalist id="profile-language-options">
+              {[
+                "English", "Spanish", "French", "German", "Portuguese", "Italian",
+                "Dutch", "Polish", "Swedish", "Turkish", "Russian", "Arabic",
+                "Hindi", "Chinese (Simplified)", "Japanese", "Korean", "Vietnamese",
+                "Indonesian", "Thai", "Hebrew",
+              ].map((l) => <option key={l} value={l} />)}
+            </datalist>
+            <p className="text-xs text-muted-foreground mt-2">
+              Default language for automated daily posts. One-off posts in Create Post can still override this.
+            </p>
           </div>
         </div>
       </div>

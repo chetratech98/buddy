@@ -168,6 +168,12 @@ serve(async (req) => {
       }
 
       try {
+        const { data: languageProfile } = await admin
+          .from("profiles")
+          .select("content_language")
+          .eq("user_id", userId)
+          .maybeSingle();
+
         const { data, error } = await admin.functions.invoke("generate-blog", {
           headers: { Authorization: `Bearer ${INTERNAL_FUNCTION_SECRET}` },
           body: {
@@ -175,6 +181,7 @@ serve(async (req) => {
             topic: todayItem.title,
             keywords: [todayItem.keyword, todayItem.long_tail_keyword].filter(Boolean).join(", "),
             tone: plan.tone || "professional",
+            language: languageProfile?.content_language || "English",
             targetWordCount: 2500,
             contentType: todayItem.type,
             contentPlanBrief: todayItem.description || "",

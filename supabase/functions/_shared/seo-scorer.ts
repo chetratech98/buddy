@@ -44,10 +44,26 @@ function tokenize(text: string): string[] {
   return stripMarkdown(text).toLowerCase().split(/\W+/).filter((w) => w.length > 2);
 }
 
+// CJK scripts (Chinese Han, Japanese Hiragana/Katakana, Korean Hangul) have
+// no spaces between words, and \W doesn't split between CJK characters
+// either — so the whitespace/punctuation tokenizer above would treat an
+// entire CJK paragraph as a single "word" and make any CJK article look
+// critically short regardless of actual length. Character count is the
+// standard proxy for "word count" in these languages.
+const CJK_CHAR_RE = /[一-鿿぀-ヿ가-힯]/g;
+
+function isCjkDominant(plainText: string): boolean {
+  if (!plainText) return false;
+  const cjkCount = (plainText.match(CJK_CHAR_RE) ?? []).length;
+  return cjkCount > plainText.length * 0.3;
+}
+
 // Exported so callers that need to enforce a word-count target (e.g.
 // generate-blog's expansion pass) count words the exact same way this
 // scorer does — otherwise "hit the target" and "scores well" can diverge.
 export function countWords(text: string): number {
+  const plain = stripMarkdown(text);
+  if (isCjkDominant(plain)) return (plain.match(CJK_CHAR_RE) ?? []).length;
   return tokenize(text).length;
 }
 
@@ -77,6 +93,22 @@ function extractKeywordTerms(keywords: string[]): string[] {
 
 function keywordDensity(text: string, keyword: string): number {
   if (!keyword) return 0;
+  const plain = stripMarkdown(text);
+
+  // CJK has no word boundaries to tokenize on, so the exact-token-array
+  // matching below would almost never fire — count the keyword as a
+  // literal substring instead, normalized by character count (this
+  // scorer's CJK proxy for "word count").
+  if (isCjkDominant(plain) || isCjkDominant(keyword)) {
+    const kw = keyword.trim();
+    if (!kw) return 0;
+    const charCount = (plain.match(CJK_CHAR_RE) ?? []).length || plain.length;
+    if (charCount === 0) return 0;
+    let idx = 0, matches = 0;
+    while ((idx = plain.indexOf(kw, idx)) !== -1) { matches++; idx += kw.length; }
+    return matches / charCount;
+  }
+
   const words = tokenize(text);
   const kwTokens = keyword.toLowerCase().split(/\W+/).filter((w) => w.length > 2);
   if (kwTokens.length === 0 || words.length === 0) return 0;
@@ -192,8 +224,10 @@ export function scoreContent(params: {
   }
 
   // ── 6. FAQ Section (max 10) ─────────────────────────────────────────────
+  // "?" only — other scripts use different question-mark characters
+  // (fullwidth "？" for Chinese/Japanese, "؟" for Arabic).
   const hasFaqHeading = /^#{2,3} (?:FAQ|Frequently Asked Questions)/im.test(content);
-  const questionLineMatches = (content.match(/^#{2,3}[^#\n]+\?$/gm) ?? []).length;
+  const questionLineMatches = (content.match(/^#{2,3}[^#\n]+[?？؟]$/gm) ?? []).length;
   const faqCount = hasFaqHeading ? Math.max(3, questionLineMatches) : questionLineMatches;
   let faqScore = 0;
   let faqNote = "";

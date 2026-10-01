@@ -200,6 +200,7 @@ export type Database = {
           avatar_url: string | null
           brand_voice: string | null
           business_model: string | null
+          content_language: string
           created_at: string
           differentiators: string[]
           display_name: string | null
@@ -232,6 +233,7 @@ export type Database = {
           avatar_url?: string | null
           brand_voice?: string | null
           business_model?: string | null
+          content_language?: string
           created_at?: string
           differentiators?: string[]
           display_name?: string | null
@@ -264,6 +266,7 @@ export type Database = {
           avatar_url?: string | null
           brand_voice?: string | null
           business_model?: string | null
+          content_language?: string
           created_at?: string
           differentiators?: string[]
           display_name?: string | null

@@ -173,6 +173,7 @@ const CreatePost = () => {
   const [topic, setTopic] = useState("");
   const [keywords, setKeywords] = useState("");
   const [tone, setTone] = useState("professional");
+  const [language, setLanguage] = useState("English");
   const [targetWordCount, setTargetWordCount] = useState(1500);
   const [selectedTemplate, setSelectedTemplate] = useState<ContentTemplate | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -216,17 +217,24 @@ const CreatePost = () => {
   const [contentGapLoading, setContentGapLoading] = useState(false);
   const [contentGapOpen, setContentGapOpen] = useState(false);
 
+  // Default state ("English") is truthy, so the profile-prefill effect below
+  // can't tell "untouched default" from "user already typed a language" just
+  // by checking the value — it needs this ref to avoid clobbering an edit
+  // the user made while the profile fetch was still in flight.
+  const languageTouchedRef = useRef(false);
+
   // ── Profile prefill ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
     supabase
       .from("profiles")
-      .select("niche, keywords")
+      .select("niche, keywords, content_language")
       .eq("user_id", user.id)
       .single()
       .then(({ data }) => {
         if (data?.keywords?.length) setKeywords(data.keywords.join(", "));
         if (data?.niche && !topic) setTopic(`Write about ${data.niche}`);
+        if (data?.content_language && !languageTouchedRef.current) setLanguage(data.content_language);
       });
   }, [user]);
 
@@ -340,10 +348,11 @@ const CreatePost = () => {
         topic: string;
         keywords: string;
         tone: string;
+        language: string;
         targetWordCount?: number;
         template?: { name: string; structure: string[]; promptTemplate: string };
       };
-      const generationBody: GenerationBody = { topic, keywords, tone, targetWordCount };
+      const generationBody: GenerationBody = { topic, keywords, tone, language, targetWordCount };
       if (selectedTemplate) {
         generationBody.template = {
           name:           selectedTemplate.name,
@@ -564,6 +573,30 @@ const CreatePost = () => {
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Language */}
+            <div>
+              <label className="block text-sm font-medium mb-2">Language</label>
+              <input
+                type="text"
+                list="language-options"
+                value={language}
+                onChange={(e) => { languageTouchedRef.current = true; setLanguage(e.target.value); }}
+                placeholder="English"
+                className="input-base"
+              />
+              <datalist id="language-options">
+                {[
+                  "English", "Spanish", "French", "German", "Portuguese", "Italian",
+                  "Dutch", "Polish", "Swedish", "Turkish", "Russian", "Arabic",
+                  "Hindi", "Chinese (Simplified)", "Japanese", "Korean", "Vietnamese",
+                  "Indonesian", "Thai", "Hebrew",
+                ].map((l) => <option key={l} value={l} />)}
+              </datalist>
+              <p className="text-xs text-muted-foreground mt-2">
+                Type or pick any language — the full article, including the FAQ section, will be written in it.
+              </p>
             </div>
 
             {/* Target Word Count */}
