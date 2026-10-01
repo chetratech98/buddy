@@ -237,6 +237,8 @@ const Account = () => {
   const [autoPublishSaving, setAutoPublishSaving] = useState(false);
   const [publishDays, setPublishDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
   const [publishDaysSaving, setPublishDaysSaving] = useState(false);
+  const [requireReview, setRequireReview] = useState(false);
+  const [requireReviewSaving, setRequireReviewSaving] = useState(false);
 
   // Billing & subscription state
   const [billingLoading, setBillingLoading] = useState(true);
@@ -359,7 +361,7 @@ const Account = () => {
   const fetchProfile = async () => {
     const { data, error } = await supabase
       .from("profiles")
-      .select("display_name, avatar_url, org_goals, org_vision, auto_publish_enabled, content_language, publish_days_of_week")
+      .select("display_name, avatar_url, org_goals, org_vision, auto_publish_enabled, content_language, publish_days_of_week, require_review_before_publish")
       .eq("user_id", user!.id)
       .maybeSingle();
 
@@ -371,8 +373,33 @@ const Account = () => {
       setAutoPublishEnabled(Boolean(data.auto_publish_enabled));
       setContentLanguage(data.content_language ?? "English");
       setPublishDays((data.publish_days_of_week as number[] | null) ?? [0, 1, 2, 3, 4, 5, 6]);
+      setRequireReview(Boolean(data.require_review_before_publish));
     }
     setLoading(false);
+  };
+
+  const handleToggleRequireReview = async (next: boolean) => {
+    if (!user) return;
+    setRequireReviewSaving(true);
+    const previous = requireReview;
+    setRequireReview(next); // optimistic
+    const { error } = await supabase
+      .from("profiles")
+      .update({ require_review_before_publish: next })
+      .eq("user_id", user.id);
+
+    if (error) {
+      setRequireReview(previous);
+      toast({ title: "Couldn't update review setting", description: error.message, variant: "destructive" });
+    } else {
+      toast({
+        title: next ? "Review required before publishing" : "Review requirement removed",
+        description: next
+          ? "Auto-generated posts will wait in Content Manager's \"In Review\" tab for your approval before publishing."
+          : "Auto-generated posts will publish immediately again, as before.",
+      });
+    }
+    setRequireReviewSaving(false);
   };
 
   const handleTogglePublishDay = async (day: number) => {
@@ -842,6 +869,28 @@ const Account = () => {
                 />
               </div>
             </CardHeader>
+            {autoPublishEnabled && (
+              <CardContent>
+                <div className="flex items-center justify-between gap-4 pt-4 border-t border-border">
+                  <div>
+                    <p className="text-sm font-medium flex items-center gap-2">
+                      <Eye size={15} /> Require my approval first
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {requireReview
+                        ? "Posts wait in Content Manager's \"In Review\" tab until you approve them — nothing publishes without you."
+                        : "Posts publish immediately with no review step."}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={requireReview}
+                    onCheckedChange={handleToggleRequireReview}
+                    disabled={requireReviewSaving}
+                    aria-label="Require review before publish"
+                  />
+                </div>
+              </CardContent>
+            )}
           </Card>
           <Card>
             <CardHeader>

@@ -4,9 +4,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Plus, FileText, Clock, CheckCircle, Trash2, Loader2, Download, Code, FileDown,
-  Calendar, Eye, Filter, Search, AlertTriangle, Pencil,
+  Calendar, Eye, Filter, Search, AlertTriangle, Pencil, X,
 } from "lucide-react";
 import { exportAsMarkdown, exportAsHTML } from "@/lib/export-utils";
+import { publishPostNow, describePublishResult } from "@/lib/publishNow";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -56,6 +57,7 @@ const ContentManager = () => {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<BlogPost | null>(null);
+  const [reviewActionId, setReviewActionId] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) fetchPosts();
@@ -84,6 +86,36 @@ const ContentManager = () => {
       toast({ title: "Post deleted" });
     }
     setDeleteTarget(null);
+  };
+
+  const handleApprove = async (post: BlogPost) => {
+    setReviewActionId(post.id);
+    try {
+      const result = await publishPostNow(post.id);
+      const { title, description, hasFailure } = describePublishResult(result);
+      toast({ title, description, variant: hasFailure ? "destructive" : "default" });
+      setPosts((prev) => prev.map((p) => (p.id === post.id ? { ...p, status: "published", published_at: new Date().toISOString() } : p)));
+    } catch (e) {
+      toast({
+        title: "Couldn't approve post",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setReviewActionId(null);
+    }
+  };
+
+  const handleReject = async (post: BlogPost) => {
+    setReviewActionId(post.id);
+    const { error } = await supabase.from("blog_posts").update({ status: "draft" }).eq("id", post.id);
+    if (error) {
+      toast({ title: "Couldn't send back to draft", description: error.message, variant: "destructive" });
+    } else {
+      setPosts((prev) => prev.map((p) => (p.id === post.id ? { ...p, status: "draft" } : p)));
+      toast({ title: "Sent back to draft", description: "Edit it or delete it from here whenever you like." });
+    }
+    setReviewActionId(null);
   };
 
   const handleExport = async (post: BlogPost, format: "html" | "markdown") => {
@@ -248,6 +280,28 @@ const ContentManager = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
+                  {post.status === "review" && (
+                    <>
+                      <button
+                        onClick={() => handleApprove(post)}
+                        disabled={reviewActionId === post.id}
+                        className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg bg-[hsl(var(--success))]/10 text-[hsl(var(--success))] hover:brightness-95 transition-all disabled:opacity-50"
+                        title="Approve and publish now"
+                      >
+                        {reviewActionId === post.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => handleReject(post)}
+                        disabled={reviewActionId === post.id}
+                        className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-muted/50 transition-colors disabled:opacity-50"
+                        title="Send back to draft"
+                      >
+                        <X size={14} />
+                        Reject
+                      </button>
+                    </>
+                  )}
                   <button
                     onClick={() => navigate(`/posts/${post.id}/edit`)}
                     className="text-muted-foreground hover:text-foreground transition-colors p-2 rounded-lg hover:bg-muted/50"

@@ -220,6 +220,7 @@ export type Database = {
           org_vision: string | null
           publish_days_of_week: number[]
           regions: string[]
+          require_review_before_publish: boolean
           role: string
           team_expertise: string[]
           top_services: string[]
@@ -254,6 +255,7 @@ export type Database = {
           org_vision?: string | null
           publish_days_of_week?: number[]
           regions?: string[]
+          require_review_before_publish?: boolean
           role?: string
           team_expertise?: string[]
           top_services?: string[]
@@ -288,6 +290,7 @@ export type Database = {
           org_vision?: string | null
           publish_days_of_week?: number[]
           regions?: string[]
+          require_review_before_publish?: boolean
           role?: string
           team_expertise?: string[]
           top_services?: string[]

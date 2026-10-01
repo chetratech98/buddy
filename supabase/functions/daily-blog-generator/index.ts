@@ -276,7 +276,7 @@ serve(async (req) => {
         // themselves.
         const { data: publishProfile } = await admin
           .from("profiles")
-          .select("auto_publish_enabled, medium_integration_token, medium_author_id")
+          .select("auto_publish_enabled, require_review_before_publish, medium_integration_token, medium_author_id")
           .eq("user_id", userId)
           .single();
 
@@ -289,6 +289,14 @@ serve(async (req) => {
         const hasWordPress = Boolean(resolvedSite);
         const hasMedium = Boolean(publishProfile?.medium_integration_token && publishProfile?.medium_author_id);
         const autoPublish = Boolean(publishProfile?.auto_publish_enabled) && (hasWordPress || hasMedium) && !isNearDuplicate;
+
+        // Opt-in safety net on top of auto-publish: instead of scheduling for
+        // immediate publish, hold the post as "review" — a human has to
+        // explicitly approve it (same publish-now pipeline, triggered from
+        // the Content Manager's "In Review" tab) before it actually goes
+        // out. Near-duplicates are already routed to plain "draft" above via
+        // autoPublish being false, so this never applies to them.
+        const needsReview = autoPublish && Boolean(publishProfile?.require_review_before_publish);
 
         const { error: insertError } = await admin.from("blog_posts").insert({
           user_id: userId,
@@ -305,7 +313,13 @@ serve(async (req) => {
           seo_title: data.seoTitle || data.title || todayItem.title,
           seo_description: data.seoDescription || data.excerpt || "",
           seo_score: typeof data.seoScore === "number" ? data.seoScore : null,
-          ...(autoPublish
+          ...(needsReview
+            ? {
+                status: "review",
+                platform_wordpress: hasWordPress,
+                platform_medium: hasMedium,
+              }
+            : autoPublish
             ? {
                 status: "scheduled",
                 scheduled_at: new Date().toISOString(),
@@ -316,7 +330,7 @@ serve(async (req) => {
         });
         if (insertError) throw insertError;
 
-        console.log(`[daily-blog-generator] Day ${todayDay} SEO score for user ${userId}: ${data.seoScore ?? "n/a"}/100${autoPublish ? " | auto-publish: scheduled" : ""}${isNearDuplicate ? " | held: near-duplicate" : ""}`);
+        console.log(`[daily-blog-generator] Day ${todayDay} SEO score for user ${userId}: ${data.seoScore ?? "n/a"}/100${needsReview ? " | held for review" : autoPublish ? " | auto-publish: scheduled" : ""}${isNearDuplicate ? " | held: near-duplicate" : ""}`);
 
         generated++;
         if (isNearDuplicate) heldDuplicate++;
