@@ -94,6 +94,67 @@ async function callOpenAI(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Helper: generate the post's featured/OG image from ogImagePrompt and
+// persist it to the post-images Storage bucket. Never throws — a failed
+// image generation (rate limit, content policy, etc.) should never block
+// the post itself; it just means the post has no featured image this time.
+// ─────────────────────────────────────────────────────────────────────────────
+async function generateFeaturedImage(
+  prompt: string,
+  apiKey: string,
+  supabase: ReturnType<typeof createClient>,
+  userId: string
+): Promise<string | null> {
+  if (!prompt) return null;
+  try {
+    const res = await fetch("https://api.openai.com/v1/images/generations", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-image-1",
+        prompt: prompt.slice(0, 4000),
+        size: "1536x1024",
+        quality: "medium",
+        n: 1,
+      }),
+    });
+
+    if (!res.ok) {
+      console.warn(`[generate-blog] Image generation failed: HTTP ${res.status}`);
+      return null;
+    }
+
+    const data = await res.json();
+    const b64 = data?.data?.[0]?.b64_json;
+    if (!b64) {
+      console.warn("[generate-blog] Image generation returned no image data");
+      return null;
+    }
+
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const path = `${userId}/${Date.now()}-${crypto.randomUUID()}.png`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("post-images")
+      .upload(path, bytes, { contentType: "image/png", upsert: false });
+
+    if (uploadError) {
+      console.warn("[generate-blog] Failed to upload generated image:", uploadError.message);
+      return null;
+    }
+
+    const { data: urlData } = supabase.storage.from("post-images").getPublicUrl(path);
+    return urlData.publicUrl;
+  } catch (e) {
+    console.warn("[generate-blog] Image generation error:", e);
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Helper: parse JSON from LLM output (strips fences)
 // ─────────────────────────────────────────────────────────────────────────────
 function parseJSON<T>(raw: string): T | null {
@@ -475,6 +536,12 @@ The content must be at least ${targetWordCount} words.`;
       }
     }
 
+    // ── PHASE 3.5: Kick off featured image generation ────────────────────────
+    // ogImagePrompt is fixed from here on (the QA passes below are explicitly
+    // told to leave it as-is) — start generating the image now so its latency
+    // overlaps with the QA review pass instead of adding to the total on top.
+    const featuredImagePromise = generateFeaturedImage(post.ogImagePrompt || "", OPENAI_API_KEY, supabase, userId);
+
     // ── PHASE 4: QA Review Pass ───────────────────────────────────────────────
     // Score the draft with the SAME deterministic checker EditPost/CreatePost
     // use, and feed its actual suggestions into the fix prompt — a targeted,
@@ -580,6 +647,9 @@ Return ONLY valid JSON in the same format: { title, excerpt, content, keywords, 
     post.competitorUrlsAnalyzed = competitorUrls.length;
     post.ogImagePrompt = post.ogImagePrompt || "";
 
+    const featuredImageUrl = await featuredImagePromise;
+    console.log(`[generate-blog] Featured image: ${featuredImageUrl ? "generated" : "none (generation failed or skipped)"}`);
+
     // Real, measured values — not just AI-echoed fields — so every caller
     // (interactive save, daily-blog-generator) can persist an accurate score
     // and meta title/description without recomputing anything themselves.
@@ -596,6 +666,7 @@ Return ONLY valid JSON in the same format: { title, excerpt, content, keywords, 
       seoScore,
       seoScoreGrade: scoreBreakdown.grade,
       seoScoreBreakdown: scoreBreakdown,
+      featuredImageUrl,
       contentIntelligence: contentIntelligence ? {
         searchIntent: contentIntelligence.searchIntent?.primary,
         intentConfidence: contentIntelligence.searchIntent?.confidence,

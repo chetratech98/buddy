@@ -40,6 +40,7 @@ interface ExistingPost {
   keywords: string[];
   status: string;
   og_image_prompt?: string;
+  featured_image_url?: string | null;
 }
 
 const TodaysBlog = () => {
@@ -57,6 +58,7 @@ const TodaysBlog = () => {
   const [content, setContent] = useState("");
   const [keywords, setKeywords] = useState<string[]>([]);
   const [ogImagePrompt, setOgImagePrompt] = useState("");
+  const [featuredImageUrl, setFeaturedImageUrl] = useState<string | null>(null);
   const [promptCopied, setPromptCopied] = useState(false);
   const [previewMode, setPreviewMode] = useState(false);
   const [alreadyPostedToday, setAlreadyPostedToday] = useState(false);
@@ -108,6 +110,7 @@ const TodaysBlog = () => {
         setContent(post.content);
         setKeywords(post.keywords || []);
         setOgImagePrompt(post.og_image_prompt || "");
+        setFeaturedImageUrl(post.featured_image_url || null);
       }
 
       if (profileRes.data?.niche) setNiche(profileRes.data.niche);
@@ -164,6 +167,7 @@ const TodaysBlog = () => {
       setContent(data.content || "");
       setKeywords(data.keywords || [todayItem.keyword]);
       setOgImagePrompt(data.ogImagePrompt || "");
+      setFeaturedImageUrl(data.featuredImageUrl || null);
 
       const { data: saved, error: saveError } = await supabase
         .from("blog_posts")
@@ -174,6 +178,7 @@ const TodaysBlog = () => {
           content: data.content || "",
           keywords: data.keywords || [todayItem.keyword],
           og_image_prompt: data.ogImagePrompt || "",
+          featured_image_url: data.featuredImageUrl || null,
           seo_title: data.seoTitle || data.title || todayItem.title,
           seo_description: data.seoDescription || data.excerpt || "",
           seo_score: typeof data.seoScore === "number" ? data.seoScore : null,
@@ -459,11 +464,24 @@ const TodaysBlog = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1.5 flex items-center gap-1.5">
-                  <Image size={14} className="text-muted-foreground" /> OG Image Prompt
+                  <Image size={14} className="text-muted-foreground" /> Featured Image
                 </label>
-                <p className="text-xs text-muted-foreground mb-2">
-                  AI-generated prompt for the featured/OG image. Paste it into DALL-E, Midjourney, or your preferred image generator.
-                </p>
+                {featuredImageUrl ? (
+                  <>
+                    <img
+                      src={featuredImageUrl}
+                      alt="Generated featured image"
+                      className="w-full max-w-md rounded-lg border border-border object-cover aspect-[3/2] mb-2"
+                    />
+                    <p className="text-xs text-muted-foreground mb-2">
+                      AI-generated — set as the featured image when published to WordPress, embedded in Medium posts.
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground mb-2">
+                    No image was generated for this post. The prompt below can still be pasted into DALL-E, Midjourney, or another image generator by hand.
+                  </p>
+                )}
                 <textarea
                   value={ogImagePrompt}
                   onChange={(e) => setOgImagePrompt(e.target.value)}

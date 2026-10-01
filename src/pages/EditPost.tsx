@@ -159,6 +159,7 @@ const EditPost = () => {
   const [seoTitle,        setSeoTitle]        = useState("");
   const [seoDescription,  setSeoDescription]  = useState("");
   const [ogImagePrompt,   setOgImagePrompt]   = useState("");
+  const [featuredImageUrl, setFeaturedImageUrl] = useState<string | null>(null);
   const [scheduledAt,     setScheduledAt]     = useState<Date | null>(null);
   const [platformWordpress, setPlatformWordpress] = useState(false);
   const [platformMedium,    setPlatformMedium]    = useState(false);
@@ -197,6 +198,7 @@ const EditPost = () => {
         setSeoTitle(data.seo_title ?? "");
         setSeoDescription(data.seo_description ?? "");
         setOgImagePrompt(data.og_image_prompt ?? "");
+        setFeaturedImageUrl(data.featured_image_url ?? null);
         setScheduledAt(data.scheduled_at ? new Date(data.scheduled_at) : null);
         setPlatformWordpress(data.platform_wordpress ?? false);
         setPlatformMedium(data.platform_medium ?? false);
@@ -468,6 +470,7 @@ const EditPost = () => {
             onSeoDescriptionChange={setSeoDescription}
             ogImagePrompt={ogImagePrompt}
             onOgImagePromptChange={setOgImagePrompt}
+            featuredImageUrl={featuredImageUrl}
           />
         </div>
       </div>

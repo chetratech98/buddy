@@ -29,6 +29,7 @@ interface PublishPanelProps {
   onSeoDescriptionChange: (v: string) => void;
   ogImagePrompt: string;
   onOgImagePromptChange: (v: string) => void;
+  featuredImageUrl?: string | null;
 }
 
 const STATUS_CONFIG: Record<PostStatus, { label: string; color: string; icon: typeof Clock }> = {
@@ -47,7 +48,7 @@ export const PublishPanel = ({
   onSave, saving, category, onCategoryChange,
   tags, onTagsChange, seoTitle, onSeoTitleChange,
   seoDescription, onSeoDescriptionChange,
-  ogImagePrompt, onOgImagePromptChange,
+  ogImagePrompt, onOgImagePromptChange, featuredImageUrl,
 }: PublishPanelProps) => {
   const [tagInput, setTagInput] = useState("");
   const [showSeo, setShowSeo] = useState(false);
@@ -214,19 +215,32 @@ export const PublishPanel = ({
         )}
       </div>
 
-      {/* OG Image Prompt */}
+      {/* Featured / OG Image */}
       <div className="card-elevated p-5">
         <button onClick={() => setShowOgImage(!showOgImage)} className="flex items-center justify-between w-full">
           <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-            <Image size={13} /> OG Image Prompt
+            <Image size={13} /> Featured Image
           </h3>
           {showOgImage ? <ChevronUp size={14} className="text-muted-foreground" /> : <ChevronDown size={14} className="text-muted-foreground" />}
         </button>
         {showOgImage && (
           <div className="space-y-3 mt-4">
-            <p className="text-xs text-muted-foreground">
-              AI-generated prompt for the featured/OG image. Paste it into DALL-E, Midjourney, or your preferred image generator.
-            </p>
+            {featuredImageUrl ? (
+              <>
+                <img
+                  src={featuredImageUrl}
+                  alt="Generated featured image"
+                  className="w-full rounded-lg border border-border object-cover aspect-[3/2]"
+                />
+                <p className="text-xs text-muted-foreground">
+                  AI-generated — this is what will be set as the featured image on WordPress and embedded in Medium posts.
+                </p>
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                No image was generated for this post. The prompt below can still be pasted into DALL-E, Midjourney, or another image generator by hand.
+              </p>
+            )}
             <textarea
               value={ogImagePrompt}
               onChange={(e) => onOgImagePromptChange(e.target.value)}

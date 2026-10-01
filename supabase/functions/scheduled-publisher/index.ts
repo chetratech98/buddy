@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveWpPassword, type WpCredentialProfile } from "../_shared/wp-crypto.ts";
+import { uploadFeaturedImageToWordPress } from "../_shared/wp-media.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -69,6 +70,13 @@ async function publishToWordPress(
   const apiUrl = `${wp_url.replace(/\/$/, "")}/wp-json/wp/v2/posts`;
   const auth   = btoa(`${wp_username}:${wp_app_password}`);
 
+  // Upload the AI-generated featured image into WP's media library first, if
+  // there is one — never blocks publishing if the upload fails.
+  let featuredMediaId: number | null = null;
+  if (typeof post.featured_image_url === "string" && post.featured_image_url) {
+    featuredMediaId = await uploadFeaturedImageToWordPress(post.featured_image_url, wp_url, wp_username, wp_app_password);
+  }
+
   const res = await fetchWithRetry(
     apiUrl,
     {
@@ -84,6 +92,7 @@ async function publishToWordPress(
         status:  "publish",
         ...(post.seo_title       && { meta: { _yoast_wpseo_title: post.seo_title } }),
         ...(post.seo_description && { meta: { _yoast_wpseo_metadesc: post.seo_description } }),
+        ...(featuredMediaId      && { featured_media: featuredMediaId }),
       }),
     }
   );
@@ -113,6 +122,12 @@ async function publishToMedium(
     ? (post.tags as string[]).slice(0, 5)
     : [];
 
+  // Medium has no separate "featured image" field — the standard way to get
+  // a lead image on a Medium post is a markdown image as the first line.
+  const mediumContent = typeof post.featured_image_url === "string" && post.featured_image_url
+    ? `![](${post.featured_image_url})\n\n${post.content ?? ""}`
+    : String(post.content ?? "");
+
   const res = await fetchWithRetry(
     `https://api.medium.com/v1/users/${medium_author_id}/posts`,
     {
@@ -124,7 +139,7 @@ async function publishToMedium(
       body: JSON.stringify({
         title:         post.title,
         contentFormat: "markdown",
-        content:       post.content,
+        content:       mediumContent,
         tags:          tagsArray,
         publishStatus: "public",
         ...(post.canonical_url && { canonicalUrl: post.canonical_url }),

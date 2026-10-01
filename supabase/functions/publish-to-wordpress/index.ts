@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isUrlSafeToFetch } from "../_shared/scraping.ts";
 import { resolveWpPassword } from "../_shared/wp-crypto.ts";
+import { uploadFeaturedImageToWordPress } from "../_shared/wp-media.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -16,6 +17,7 @@ interface WordPressPost {
   categories?: number[];
   tags?: number[];
   date?: string;
+  featured_media?: number;
 }
 
 serve(async (req) => {
@@ -106,6 +108,13 @@ serve(async (req) => {
     if (post.scheduled_at && post.status === 'scheduled') {
       wpPost.date = new Date(post.scheduled_at).toISOString();
       wpPost.status = 'publish';
+    }
+
+    // Upload the AI-generated featured image into WP's media library, if
+    // there is one — never blocks publishing if the upload fails.
+    if (post.featured_image_url) {
+      const mediaId = await uploadFeaturedImageToWordPress(post.featured_image_url, safeWpUrl, wp_username, wp_app_password);
+      if (mediaId) wpPost.featured_media = mediaId;
     }
 
     // WordPress REST API endpoint

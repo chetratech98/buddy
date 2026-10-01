@@ -214,6 +214,7 @@ serve(async (req) => {
           content: data.content || "",
           keywords: data.keywords || [todayItem.keyword],
           og_image_prompt: data.ogImagePrompt || "",
+          featured_image_url: data.featuredImageUrl || null,
           // generate-blog already measured these with the real scorer —
           // persist them directly instead of leaving seo_score/seo_title/
           // seo_description at their empty defaults for every auto-generated

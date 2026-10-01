@@ -196,6 +196,7 @@ const CreatePost = () => {
   const [seoTitle, setSeoTitle] = useState("");
   const [seoDescription, setSeoDescription] = useState("");
   const [ogImagePrompt, setOgImagePrompt] = useState("");
+  const [featuredImageUrl, setFeaturedImageUrl] = useState<string | null>(null);
   const [scheduledAt, setScheduledAt] = useState<Date | null>(null);
   const [platformWordpress, setPlatformWordpress] = useState(false);
   const [platformMedium, setPlatformMedium] = useState(false);
@@ -371,6 +372,7 @@ const CreatePost = () => {
       setSeoTitle((data.title || "").slice(0, 60));
       setSeoDescription((data.excerpt || "").slice(0, 160));
       setOgImagePrompt(data.ogImagePrompt || "");
+      setFeaturedImageUrl(data.featuredImageUrl || null);
       setCompetitorUrls(data.competitorUrlsAnalyzed || []);
       setStep("edit");
     } catch (e) {
@@ -425,6 +427,7 @@ const CreatePost = () => {
       seo_description:    seoDescription,
       seo_score:          seoScore?.total ?? null,
       og_image_prompt:    ogImagePrompt,
+      featured_image_url: featuredImageUrl,
       scheduled_at:       scheduledAt?.toISOString() || null,
       published_at:       saveStatus === "published" ? new Date().toISOString() : null,
       platform_wordpress: platformWordpress,
@@ -1026,6 +1029,7 @@ const CreatePost = () => {
               onSeoDescriptionChange={setSeoDescription}
               ogImagePrompt={ogImagePrompt}
               onOgImagePromptChange={setOgImagePrompt}
+              featuredImageUrl={featuredImageUrl}
             />
           </div>
         </div>
