@@ -5,6 +5,7 @@ import { uploadFeaturedImageToWordPress } from "../_shared/wp-media.ts";
 import { buildPostSchemas, schemaScriptTag } from "../_shared/schema.ts";
 import { resolveWpTermIds } from "../_shared/wp-taxonomy.ts";
 import { publishToMedium } from "../_shared/medium-publish.ts";
+import { resolveWpSiteCredentials } from "../_shared/wp-site-resolver.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -186,10 +187,13 @@ serve(async (req) => {
         continue;
       }
 
-      // Step 2: Load user profile for platform credentials
+      // Step 2: Load user profile for Medium credentials + display name.
+      // WordPress credentials are resolved separately below via
+      // resolveWpSiteCredentials (explicit site -> org/user default site ->
+      // legacy profile fields), not read directly off profiles here.
       const { data: profile } = await admin
         .from("profiles")
-        .select("wp_url, wp_username, wp_app_password, wp_app_password_enc, medium_integration_token, medium_author_id, display_name")
+        .select("medium_integration_token, medium_author_id, display_name")
         .eq("user_id", post.user_id)
         .single();
 
@@ -199,11 +203,18 @@ serve(async (req) => {
       let canonicalUrl: string | undefined;
 
       // Step 3: WordPress
-      if (post.platform_wordpress && profile) {
+      if (post.platform_wordpress) {
         try {
+          const site = await resolveWpSiteCredentials(admin, {
+            userId: post.user_id,
+            orgId: post.org_id ?? null,
+            siteId: post.wordpress_site_id ?? null,
+          });
+          if (!site) throw new Error("WordPress credentials not configured");
+
           const { wordpressId, wordpressUrl } = await publishToWordPress(
             post as Record<string, unknown>,
-            profile as WpCredentialProfile,
+            { ...site, display_name: profile?.display_name },
             wpEncryptionKey
           );
           platformStatus.wordpress = {

@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isUrlSafeToFetch } from "../_shared/scraping.ts";
 import { resolveWpPassword } from "../_shared/wp-crypto.ts";
+import { resolveWpSiteCredentials } from "../_shared/wp-site-resolver.ts";
 import { uploadFeaturedImageToWordPress } from "../_shared/wp-media.ts";
 import { buildPostSchemas, schemaScriptTag } from "../_shared/schema.ts";
 import { resolveWpTermIds } from "../_shared/wp-taxonomy.ts";
@@ -71,32 +72,33 @@ serve(async (req) => {
       throw new Error("Post not found or access denied");
     }
 
-    // Get user's WordPress credentials
-    const { data: profile, error: profileError } = await supabaseClient
+    // Author name for schema — separate from WP credential resolution below,
+    // since credentials may now come from wordpress_sites instead of profiles.
+    const { data: profile } = await supabaseClient
       .from("profiles")
-      .select("wp_url, wp_username, wp_app_password_enc, wp_app_password, display_name")
+      .select("display_name")
       .eq("user_id", user.id)
       .single();
 
-    if (profileError || !profile) {
-      throw new Error("Profile not found");
+    // Resolve WordPress credentials: an explicit per-post site, else the
+    // org/user's default wordpress_sites row, else the legacy single-site
+    // profiles fields. See _shared/wp-site-resolver.ts.
+    const site = await resolveWpSiteCredentials(supabaseClient, {
+      userId: user.id,
+      orgId: post.org_id ?? null,
+      siteId: post.wordpress_site_id ?? null,
+    });
+    if (!site) {
+      throw new Error("WordPress credentials not configured. Please add a WordPress site in Settings, or connect one in your profile settings.");
     }
+    const { wp_url, wp_username } = site;
 
-    const { wp_url, wp_username } = profile;
-
-    // Resolve password: prefer encrypted, fall back to legacy plaintext
-    const resolved = await resolveWpPassword(profile, Deno.env.get("WP_ENCRYPTION_KEY"));
-    if ("error" in resolved) {
-      throw new Error(
-        profile.wp_app_password_enc || profile.wp_app_password
-          ? resolved.error
-          : "WordPress credentials not configured. Please add your WordPress site URL, username, and application password in your profile settings."
-      );
-    }
+    const resolved = await resolveWpPassword(site, Deno.env.get("WP_ENCRYPTION_KEY"));
+    if ("error" in resolved) throw new Error(resolved.error);
     const wp_app_password = resolved.password;
 
     if (!wp_url || !wp_username) {
-      throw new Error("WordPress URL or username not configured. Please update your profile settings.");
+      throw new Error("WordPress URL or username not configured.");
     }
 
     const urlCheck = isUrlSafeToFetch(wp_url);
@@ -114,7 +116,7 @@ serve(async (req) => {
       content: post.content,
       featuredImageUrl: post.featured_image_url,
       publishedAt: post.published_at,
-      authorName: profile.display_name,
+      authorName: profile?.display_name,
     });
     const contentWithSchema = `${post.content}\n\n${schemaScriptTag(schemas)}`;
 

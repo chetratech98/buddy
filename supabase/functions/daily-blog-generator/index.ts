@@ -33,8 +33,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // currently broken (unresolvable auth-js submodule) — pin to the last known-
 // good release until that's fixed upstream.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.116.0";
-import { hasWordPressCredentials, type WpCredentialProfile } from "../_shared/wp-crypto.ts";
 import { checkDuplicate } from "../_shared/duplicate-check.ts";
+import { resolveWpSiteCredentials } from "../_shared/wp-site-resolver.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -230,11 +230,17 @@ serve(async (req) => {
         // themselves.
         const { data: publishProfile } = await admin
           .from("profiles")
-          .select("auto_publish_enabled, wp_url, wp_username, wp_app_password, wp_app_password_enc, medium_integration_token, medium_author_id")
+          .select("auto_publish_enabled, medium_integration_token, medium_author_id")
           .eq("user_id", userId)
           .single();
 
-        const hasWordPress = publishProfile ? hasWordPressCredentials(publishProfile as WpCredentialProfile) : false;
+        // Checks the same precedence the actual publish step will use
+        // (explicit site -> org/user default site -> legacy profile fields)
+        // — a user who only ever set up a site via Settings > Sites and
+        // never touched the old single-site profile form still counts as
+        // having WordPress connected.
+        const resolvedSite = await resolveWpSiteCredentials(admin, { userId, orgId: null, siteId: null });
+        const hasWordPress = Boolean(resolvedSite);
         const hasMedium = Boolean(publishProfile?.medium_integration_token && publishProfile?.medium_author_id);
         const autoPublish = Boolean(publishProfile?.auto_publish_enabled) && (hasWordPress || hasMedium) && !isNearDuplicate;
 
