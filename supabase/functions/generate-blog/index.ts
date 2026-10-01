@@ -20,6 +20,34 @@ const corsHeaders = {
 // that gap.
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Helper: pick one H2 section to illustrate with an in-body image — roughly
+// the middle of the article, skipping the opening section (keep the intro
+// clean) and anything that looks like FAQ/conclusion (image doesn't fit the
+// Q&A format and the article is winding down by then anyway).
+// ─────────────────────────────────────────────────────────────────────────────
+function pickBodySectionForImage(content: string): { heading: string; lineIndex: number } | null {
+  const lines = content.split("\n");
+  const h2Indices: number[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (/^##\s+.+$/.test(lines[i]) && !/^###/.test(lines[i])) h2Indices.push(i);
+  }
+  // Skip the first H2 (opening section) and anything FAQ/conclusion-like.
+  const eligible = h2Indices.slice(1).filter((i) => !/faq|frequently asked|conclusion|summary|final thoughts|wrap.?up/i.test(lines[i]));
+  if (eligible.length === 0) return null;
+
+  const midIndex = eligible[Math.floor(eligible.length / 2)];
+  const heading = lines[midIndex].replace(/^##\s+/, "").trim();
+  return { heading, lineIndex: midIndex };
+}
+
+/** Inserts a markdown image right after the given H2 heading's line. */
+function insertImageAfterHeading(content: string, lineIndex: number, imageUrl: string, alt: string): string {
+  const lines = content.split("\n");
+  lines.splice(lineIndex + 1, 0, "", `![${alt.replace(/[[\]]/g, "")}](${imageUrl})`);
+  return lines.join("\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Helper: fetch top competitor URLs from SerpApi
 // ─────────────────────────────────────────────────────────────────────────────
 async function fetchCompetitorUrls(
@@ -716,6 +744,26 @@ Return ONLY valid JSON in the same format: { title, excerpt, content, keywords, 
 
     const featuredImageUrl = await featuredImagePromise;
     console.log(`[generate-blog] Featured image: ${featuredImageUrl ? "generated" : "none (generation failed or skipped)"}`);
+
+    // ── In-body image ──────────────────────────────────────────────────────
+    // One image placed at a natural mid-article section break, in addition
+    // to the featured image — generated last (after the content is truly
+    // final) so the heading it illustrates is guaranteed to still exist in
+    // the shipped article. Never blocks the post if generation fails.
+    const bodySection = pickBodySectionForImage(post.content || "");
+    if (bodySection) {
+      const sectionImagePrompt = `Create a single standalone illustration for a blog section titled "${bodySection.heading}", in an article about "${topic}". Match this visual style and color palette: ${post.ogImagePrompt || "clean, modern, professional"}. No embedded text, logos, or words in the image — imagery only.`;
+      const bodyImageUrl = await generateFeaturedImage(sectionImagePrompt, OPENAI_API_KEY, supabase, userId);
+      if (bodyImageUrl) {
+        post.content = insertImageAfterHeading(post.content || "", bodySection.lineIndex, bodyImageUrl, bodySection.heading);
+        post.wordCount = countWords(post.content || "");
+        console.log(`[generate-blog] In-body image: generated for section "${bodySection.heading}"`);
+      } else {
+        console.log(`[generate-blog] In-body image: generation failed or skipped for section "${bodySection.heading}"`);
+      }
+    } else {
+      console.log("[generate-blog] In-body image: no eligible section found, skipping");
+    }
 
     // Real, measured values — not just AI-echoed fields — so every caller
     // (interactive save, daily-blog-generator) can persist an accurate score
