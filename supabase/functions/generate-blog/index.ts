@@ -238,28 +238,50 @@ serve(async (req) => {
       userId = user.id;
     }
 
-    // ── Quota check ───────────────────────────────────────────────────────────
-    const { data: quotaProfile, error: quotaError } = await supabase
-      .from("profiles")
-      .select("posts_used_this_month, posts_quota_monthly")
-      .eq("user_id", userId)
-      .single();
+    // ── Regenerate mode ──────────────────────────────────────────────────────
+    // Rewriting an existing post is maintenance, not new content — it
+    // doesn't consume the monthly post quota, and it skips the "write from
+    // scratch" prompt in favor of revising what's already there.
+    const existingPost = body.existingPost && typeof body.existingPost === "object"
+      ? {
+          title:   typeof body.existingPost.title   === "string" ? body.existingPost.title.slice(0, 200)     : "",
+          content: typeof body.existingPost.content === "string" ? body.existingPost.content.slice(0, 20000) : "",
+          excerpt: typeof body.existingPost.excerpt === "string" ? body.existingPost.excerpt.slice(0, 300)    : "",
+          keywords: Array.isArray(body.existingPost.keywords) ? body.existingPost.keywords.slice(0, 10).map(String) : [],
+          featuredImageUrl: typeof body.existingPost.featuredImageUrl === "string" ? body.existingPost.featuredImageUrl : null,
+        }
+      : null;
+    const regenerateInstruction = typeof body.regenerateInstruction === "string"
+      ? body.regenerateInstruction.trim().slice(0, 500)
+      : "";
+    const isRegenerate = existingPost !== null && Boolean(existingPost.content);
 
-    if (!quotaError && quotaProfile) {
-      const used = quotaProfile.posts_used_this_month ?? 0;
-      const quota = quotaProfile.posts_quota_monthly ?? 30;
-      if (used >= quota) {
-        return jsonResponse({
-          error: "quota_exceeded",
-          message: "You've reached your monthly post limit. Upgrade your plan to continue creating content.",
-        }, 200);
+    // ── Quota check ───────────────────────────────────────────────────────────
+    if (!isRegenerate) {
+      const { data: quotaProfile, error: quotaError } = await supabase
+        .from("profiles")
+        .select("posts_used_this_month, posts_quota_monthly")
+        .eq("user_id", userId)
+        .single();
+
+      if (!quotaError && quotaProfile) {
+        const used = quotaProfile.posts_used_this_month ?? 0;
+        const quota = quotaProfile.posts_quota_monthly ?? 30;
+        if (used >= quota) {
+          return jsonResponse({
+            error: "quota_exceeded",
+            message: "You've reached your monthly post limit. Upgrade your plan to continue creating content.",
+          }, 200);
+        }
+        // Increment usage counter before generation (prevents races)
+        await supabase.rpc("check_and_increment_quota", { p_user_id: userId });
       }
-      // Increment usage counter before generation (prevents races)
-      await supabase.rpc("check_and_increment_quota", { p_user_id: userId });
     }
 
     // ── Input validation ──────────────────────────────────────────────────────
-    const topic    = typeof body.topic    === "string" ? body.topic.trim().slice(0, 1000)   : "";
+    const topic    = typeof body.topic === "string" && body.topic.trim()
+      ? body.topic.trim().slice(0, 1000)
+      : (isRegenerate ? existingPost!.title : "");
     const keywords = typeof body.keywords === "string" ? body.keywords.trim().slice(0, 500) : "";
     const tone     = typeof body.tone     === "string" ? body.tone.trim().slice(0, 50)      : "professional";
     // 2500 here (what we ask the AI to aim for) vs. the scorer's actual
@@ -468,7 +490,11 @@ JSON format:
     };
     const formatGuide = contentTypeGuide[contentType] || contentTypeGuide["blog"];
 
-    const userPrompt = `Write a comprehensive, SEO-optimized blog post on this topic:
+    const regenerateSection = isRegenerate
+      ? `\n\n## EXISTING POST TO REVISE (this is not a fresh start — rewrite this, don't ignore it)\nTitle: ${existingPost!.title}\nExcerpt: ${existingPost!.excerpt}\nContent:\n${existingPost!.content}\n\n${regenerateInstruction ? `REVISION INSTRUCTION FROM THE USER: ${regenerateInstruction}` : "No specific instruction was given — generally improve depth, comprehensiveness, and how current the content feels, while keeping the original's angle and anything that's already working."}`
+      : "";
+
+    const userPrompt = `${isRegenerate ? "Revise the existing blog post below according to the instruction given — keep its core topic and angle, but improve it as instructed" : "Write a comprehensive, SEO-optimized blog post on this topic"}:
 
 TOPIC: ${topic}
 ${niche ? `SITE NICHE: ${niche}` : ""}
@@ -483,6 +509,7 @@ ${intelligenceSection}
 ${competitorSection}
 ${templateSection}
 ${internalLinkingSection}
+${regenerateSection}
 
 CRITICAL REQUIREMENTS:
 1. Follow the FORMAT INSTRUCTIONS above to structure the article correctly for its type (${contentType})
@@ -492,7 +519,8 @@ CRITICAL REQUIREMENTS:
 5. Include all semantic entities naturally
 6. The content field must be a complete, polished article of ${intelligenceWordCount} words (±10%)
 7. ${contentIntelligence ? 'Address all content gaps mentioned to differentiate from competitors' : 'Provide unique insights not found in the top 10 Google results'}
-8. ${relatedPosts.length > 0 ? 'Use the INTERNAL LINKING URLs exactly as given — never a different or invented URL' : 'Do not add any hyperlinks to the content — no related posts were found to link to'}`;
+8. ${relatedPosts.length > 0 ? 'Use the INTERNAL LINKING URLs exactly as given — never a different or invented URL' : 'Do not add any hyperlinks to the content — no related posts were found to link to'}
+${isRegenerate ? "9. This is a REVISION — base your output on the EXISTING POST TO REVISE above, applying the instruction, not a disconnected new article" : ""}`;
 
     console.log("[generate-blog] Calling OpenAI for generation with content intelligence...");
     const rawGeneration = await callOpenAI(
@@ -561,7 +589,14 @@ The content must be at least ${targetWordCount} words.`;
     // ogImagePrompt is fixed from here on (the QA passes below are explicitly
     // told to leave it as-is) — start generating the image now so its latency
     // overlaps with the QA review pass instead of adding to the total on top.
-    const featuredImagePromise = generateFeaturedImage(post.ogImagePrompt || "", OPENAI_API_KEY, supabase, userId);
+    // Regenerating an existing post that already has an image preserves it
+    // rather than paying for a new one on every rewrite — a user who wants a
+    // new image can still ask for one in their instruction.
+    const wantsNewImage = !isRegenerate || !existingPost!.featuredImageUrl
+      || /\b(image|picture|photo|graphic|thumbnail)\b/i.test(regenerateInstruction);
+    const featuredImagePromise = wantsNewImage
+      ? generateFeaturedImage(post.ogImagePrompt || "", OPENAI_API_KEY, supabase, userId)
+      : Promise.resolve(existingPost!.featuredImageUrl);
 
     // ── PHASE 4: QA Review Pass ───────────────────────────────────────────────
     // Score the draft with the SAME deterministic checker EditPost/CreatePost

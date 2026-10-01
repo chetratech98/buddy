@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Loader2, Trash2, ChevronDown, ChevronUp, Info,
-  TrendingUp, Zap, Sparkles, Search, AlertTriangle,
+  TrendingUp, Zap, Sparkles, Search, AlertTriangle, Wand2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { PageShell } from "@/components/PageShell";
@@ -18,6 +18,11 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SEO Score Panel (reused from CreatePost pattern)
@@ -148,6 +153,9 @@ const EditPost = () => {
   const [saving,   setSaving]   = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showRegenerateDialog, setShowRegenerateDialog] = useState(false);
+  const [regenerateInstruction, setRegenerateInstruction] = useState("");
+  const [regenerating, setRegenerating] = useState(false);
 
   // Post fields
   const [title,           setTitle]           = useState("");
@@ -287,6 +295,49 @@ const EditPost = () => {
     setSaving(false);
   };
 
+  // ── Regenerate with AI ──────────────────────────────────────────────────────
+  // Reuses generate-blog's full pipeline (competitor research, QA/scoring
+  // loop, internal linking) in "regenerate mode" rather than a separate,
+  // lighter rewrite path — same quality bar as a fresh post. Never
+  // auto-saves: the result replaces the in-memory fields below so the user
+  // reviews it like any other edit before choosing to save or publish.
+  const handleRegenerate = async () => {
+    setRegenerating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-blog", {
+        body: {
+          existingPost: { title, content, excerpt, keywords: postKeywords, featuredImageUrl },
+          regenerateInstruction: regenerateInstruction.trim(),
+          keywords: postKeywords.join(", "),
+          contentType: "blog",
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      setTitle(data.title || title);
+      setExcerpt(data.excerpt || excerpt);
+      setContent(data.content || content);
+      setPostKeywords(data.keywords || postKeywords);
+      setSeoTitle((data.title || title).slice(0, 60));
+      setSeoDescription((data.excerpt || excerpt).slice(0, 160));
+      setOgImagePrompt(data.ogImagePrompt || ogImagePrompt);
+      setFeaturedImageUrl(data.featuredImageUrl ?? featuredImageUrl);
+
+      setShowRegenerateDialog(false);
+      setRegenerateInstruction("");
+      toast({ title: "Content regenerated", description: "Review the changes below, then save or publish when ready." });
+    } catch (e) {
+      toast({
+        title: "Regeneration failed",
+        description: e instanceof Error ? e.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
   // ── Delete ───────────────────────────────────────────────────────────────
   const handleDelete = async () => {
     setDeleting(true);
@@ -339,12 +390,20 @@ const EditPost = () => {
     <PageShell wide>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Edit Post</h1>
-        <button
-          onClick={() => setShowDeleteDialog(true)}
-          className="flex items-center gap-1.5 text-sm text-destructive hover:text-destructive/80 transition-colors px-3 py-2 rounded-lg hover:bg-destructive/8"
-        >
-          <Trash2 size={15} /> Delete
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowRegenerateDialog(true)}
+            className="flex items-center gap-1.5 text-sm text-primary hover:text-primary/80 transition-colors px-3 py-2 rounded-lg hover:bg-primary/8"
+          >
+            <Wand2 size={15} /> Regenerate with AI
+          </button>
+          <button
+            onClick={() => setShowDeleteDialog(true)}
+            className="flex items-center gap-1.5 text-sm text-destructive hover:text-destructive/80 transition-colors px-3 py-2 rounded-lg hover:bg-destructive/8"
+          >
+            <Trash2 size={15} /> Delete
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
@@ -519,6 +578,36 @@ const EditPost = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Regenerate with AI */}
+      <Dialog open={showRegenerateDialog} onOpenChange={(open) => { if (!regenerating) setShowRegenerateDialog(open); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wand2 size={18} className="text-primary" /> Regenerate with AI
+            </DialogTitle>
+            <DialogDescription>
+              Rewrites this post using the same research-and-score pipeline as generating a new one. The current title, content, excerpt, and SEO fields will be replaced — nothing is saved until you click Save or Publish yourself. Your existing featured image is kept unless your instruction asks for a new one. This doesn't use your monthly post quota.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={regenerateInstruction}
+            onChange={(e) => setRegenerateInstruction(e.target.value)}
+            placeholder="Optional — e.g. 'make it more comprehensive and current for 2026', 'tighten the intro', 'add more examples'. Leave blank for a general improvement pass."
+            rows={4}
+            disabled={regenerating}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRegenerateDialog(false)} disabled={regenerating}>
+              Cancel
+            </Button>
+            <Button onClick={handleRegenerate} disabled={regenerating}>
+              {regenerating ? <Loader2 size={14} className="animate-spin mr-2" /> : <Wand2 size={14} className="mr-2" />}
+              {regenerating ? "Regenerating…" : "Regenerate"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageShell>
   );
 };
