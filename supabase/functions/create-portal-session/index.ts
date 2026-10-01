@@ -52,7 +52,7 @@ serve(async (req) => {
 
     const portalSession = await stripe.billingPortal.sessions.create({
       customer: profile.stripe_customer_id,
-      return_url: `${origin}/billing`,
+      return_url: `${origin}/profile`,
     });
 
     return jsonResponse({ url: portalSession.url });

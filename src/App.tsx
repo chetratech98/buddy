@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { Suspense, lazy } from "react";
@@ -19,7 +19,6 @@ const AcceptInvite   = lazy(() => import("./pages/AcceptInvite"));
 const Profile        = lazy(() => import("./pages/Profile"));
 const Dashboard      = lazy(() => import("./pages/Analytics"));
 const ContentCalendar= lazy(() => import("./pages/ContentCalendar"));
-const Billing        = lazy(() => import("./pages/Billing"));
 const CreatePost     = lazy(() => import("./pages/CreatePost"));
 const Posts          = lazy(() => import("./pages/Posts"));
 const NotFound       = lazy(() => import("./pages/NotFound"));
@@ -79,7 +78,8 @@ const App = () => (
               <Route path="/get-started"      element={<ProtectedRoute><GetStarted /></ProtectedRoute>} />
               <Route path="/dashboard"        element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/profile"          element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-              <Route path="/billing"          element={<ProtectedRoute><Billing /></ProtectedRoute>} />
+              {/* Billing was merged into Profile — keep old links/bookmarks working */}
+              <Route path="/billing"          element={<Navigate to="/profile" replace />} />
               <Route path="/calendar"         element={<ProtectedRoute><ContentCalendar /></ProtectedRoute>} />
               <Route path="/create-post"      element={<ProtectedRoute><CreatePost /></ProtectedRoute>} />
               <Route path="/posts"            element={<ProtectedRoute><Posts /></ProtectedRoute>} />

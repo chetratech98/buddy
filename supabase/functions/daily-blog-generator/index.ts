@@ -33,6 +33,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // currently broken (unresolvable auth-js submodule) — pin to the last known-
 // good release until that's fixed upstream.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.116.0";
+import { hasWordPressCredentials, type WpCredentialProfile } from "../_shared/wp-crypto.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -189,6 +190,23 @@ serve(async (req) => {
         }
         if (data?.error) throw new Error(data.error);
 
+        // ── Auto-publish eligibility ────────────────────────────────────────
+        // A generated post only skips the draft stage and gets scheduled for
+        // immediate publish (picked up by the scheduled-publisher cron within
+        // ~5 minutes) when the user has explicitly opted in AND has at least
+        // one platform fully connected. Anyone who hasn't opted in keeps
+        // today's behavior: a draft in Posts that a human reviews and
+        // publishes themselves.
+        const { data: publishProfile } = await admin
+          .from("profiles")
+          .select("auto_publish_enabled, wp_url, wp_username, wp_app_password, wp_app_password_enc, medium_integration_token, medium_author_id")
+          .eq("user_id", userId)
+          .single();
+
+        const hasWordPress = publishProfile ? hasWordPressCredentials(publishProfile as WpCredentialProfile) : false;
+        const hasMedium = Boolean(publishProfile?.medium_integration_token && publishProfile?.medium_author_id);
+        const autoPublish = Boolean(publishProfile?.auto_publish_enabled) && (hasWordPress || hasMedium);
+
         const { error: insertError } = await admin.from("blog_posts").insert({
           user_id: userId,
           title: data.title || todayItem.title,
@@ -203,11 +221,18 @@ serve(async (req) => {
           seo_title: data.seoTitle || data.title || todayItem.title,
           seo_description: data.seoDescription || data.excerpt || "",
           seo_score: typeof data.seoScore === "number" ? data.seoScore : null,
-          status: "draft",
+          ...(autoPublish
+            ? {
+                status: "scheduled",
+                scheduled_at: new Date().toISOString(),
+                platform_wordpress: hasWordPress,
+                platform_medium: hasMedium,
+              }
+            : { status: "draft" }),
         });
         if (insertError) throw insertError;
 
-        console.log(`[daily-blog-generator] Day ${todayDay} SEO score for user ${userId}: ${data.seoScore ?? "n/a"}/100`);
+        console.log(`[daily-blog-generator] Day ${todayDay} SEO score for user ${userId}: ${data.seoScore ?? "n/a"}/100${autoPublish ? " | auto-publish: scheduled" : ""}`);
 
         generated++;
         results.push({ user_id: userId, status: "generated" });

@@ -157,6 +157,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          auto_publish_enabled: boolean
           avatar_url: string | null
           brand_voice: string | null
           business_model: string | null
@@ -188,6 +189,7 @@ export type Database = {
           wp_username: string | null
         }
         Insert: {
+          auto_publish_enabled?: boolean
           avatar_url?: string | null
           brand_voice?: string | null
           business_model?: string | null
@@ -219,6 +221,7 @@ export type Database = {
           wp_username?: string | null
         }
         Update: {
+          auto_publish_enabled?: boolean
           avatar_url?: string | null
           brand_voice?: string | null
           business_model?: string | null

@@ -84,8 +84,8 @@ serve(async (req) => {
       payment_method_types: ["card"],
       line_items: [{ price: priceId, quantity: 1 }],
       mode: "subscription",
-      success_url: `${origin}/billing?session=success`,
-      cancel_url: `${origin}/billing?session=cancelled`,
+      success_url: `${origin}/profile?session=success`,
+      cancel_url: `${origin}/profile?session=cancelled`,
       allow_promotion_codes: true,
       metadata: { supabase_user_id: user.id, plan: planId },
       subscription_data: {

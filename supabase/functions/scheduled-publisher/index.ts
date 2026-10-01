@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resolveWpPassword, type WpCredentialProfile } from "../_shared/wp-crypto.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -54,12 +55,16 @@ async function fetchWithRetry(
 // ─────────────────────────────────────────────────────────────────────────────
 async function publishToWordPress(
   post: Record<string, unknown>,
-  profile: Record<string, string>
+  profile: WpCredentialProfile,
+  wpEncryptionKey: string | undefined
 ): Promise<{ wordpressId: number; wordpressUrl: string }> {
-  const { wp_url, wp_username, wp_app_password } = profile;
-  if (!wp_url || !wp_username || !wp_app_password) {
+  const { wp_url, wp_username } = profile;
+  if (!wp_url || !wp_username) {
     throw new Error("WordPress credentials incomplete in profile");
   }
+  const resolved = await resolveWpPassword(profile, wpEncryptionKey);
+  if ("error" in resolved) throw new Error(resolved.error);
+  const wp_app_password = resolved.password;
 
   const apiUrl = `${wp_url.replace(/\/$/, "")}/wp-json/wp/v2/posts`;
   const auth   = btoa(`${wp_username}:${wp_app_password}`);
@@ -149,6 +154,7 @@ serve(async (req) => {
     Deno.env.get("SUPABASE_URL") ?? "",
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
   );
+  const wpEncryptionKey = Deno.env.get("WP_ENCRYPTION_KEY");
 
   type PublishResult = {
     postId: string;
@@ -191,7 +197,7 @@ serve(async (req) => {
       // Step 2: Load user profile for platform credentials
       const { data: profile } = await admin
         .from("profiles")
-        .select("wp_url, wp_username, wp_app_password, medium_integration_token, medium_author_id")
+        .select("wp_url, wp_username, wp_app_password, wp_app_password_enc, medium_integration_token, medium_author_id")
         .eq("user_id", post.user_id)
         .single();
 
@@ -205,7 +211,8 @@ serve(async (req) => {
         try {
           const { wordpressId, wordpressUrl } = await publishToWordPress(
             post as Record<string, unknown>,
-            profile as Record<string, string>
+            profile as WpCredentialProfile,
+            wpEncryptionKey
           );
           platformStatus.wordpress = {
             published:   true,

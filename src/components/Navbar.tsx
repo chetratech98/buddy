@@ -9,7 +9,6 @@ const navLinks = [
   { label: "How It Works", href: "#how-it-works",  isRoute: false, authOnly: false, guestOnly: true  },
   { label: "Pricing",      href: "#pricing",       isRoute: false, authOnly: false, guestOnly: true  },
   { label: "Dashboard",    href: "/dashboard",     isRoute: true,  authOnly: true,  guestOnly: false },
-  { label: "Billing",      href: "/billing",       isRoute: true,  authOnly: true,  guestOnly: false },
   { label: "Analyze Site", href: "/get-started",   isRoute: true,  authOnly: true,  guestOnly: false },
   { label: "SERP Analysis",href: "/seo-analysis",  isRoute: true,  authOnly: true,  guestOnly: false },
   { label: "Content Plan", href: "/content-plan",  isRoute: true,  authOnly: true,  guestOnly: false },
