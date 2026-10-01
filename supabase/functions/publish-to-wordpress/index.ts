@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isUrlSafeToFetch } from "../_shared/scraping.ts";
 import { resolveWpPassword } from "../_shared/wp-crypto.ts";
 import { uploadFeaturedImageToWordPress } from "../_shared/wp-media.ts";
+import { buildPostSchemas, schemaScriptTag } from "../_shared/schema.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -66,7 +67,7 @@ serve(async (req) => {
     // Get user's WordPress credentials
     const { data: profile, error: profileError } = await supabaseClient
       .from("profiles")
-      .select("wp_url, wp_username, wp_app_password_enc, wp_app_password")
+      .select("wp_url, wp_username, wp_app_password_enc, wp_app_password, display_name")
       .eq("user_id", user.id)
       .single();
 
@@ -97,10 +98,23 @@ serve(async (req) => {
     }
     const safeWpUrl = urlCheck.normalized!;
 
+    // Append structured data (BlogPosting + FAQPage, when a FAQ section is
+    // detected) so the post can actually claim rich-snippet eligibility
+    // instead of just having FAQ text with no schema backing it.
+    const schemas = buildPostSchemas({
+      title: post.title,
+      excerpt: post.excerpt,
+      content: post.content,
+      featuredImageUrl: post.featured_image_url,
+      publishedAt: post.published_at,
+      authorName: profile.display_name,
+    });
+    const contentWithSchema = `${post.content}\n\n${schemaScriptTag(schemas)}`;
+
     // Prepare WordPress post data
     const wpPost: WordPressPost = {
       title: post.title,
-      content: post.content,
+      content: contentWithSchema,
       status: post.status === 'published' ? 'publish' : 'draft',
       excerpt: post.excerpt || '',
     };

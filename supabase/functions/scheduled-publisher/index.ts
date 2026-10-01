@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveWpPassword, type WpCredentialProfile } from "../_shared/wp-crypto.ts";
 import { uploadFeaturedImageToWordPress } from "../_shared/wp-media.ts";
+import { buildPostSchemas, schemaScriptTag } from "../_shared/schema.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -56,7 +57,7 @@ async function fetchWithRetry(
 // ─────────────────────────────────────────────────────────────────────────────
 async function publishToWordPress(
   post: Record<string, unknown>,
-  profile: WpCredentialProfile,
+  profile: WpCredentialProfile & { display_name?: string | null },
   wpEncryptionKey: string | undefined
 ): Promise<{ wordpressId: number; wordpressUrl: string }> {
   const { wp_url, wp_username } = profile;
@@ -77,6 +78,19 @@ async function publishToWordPress(
     featuredMediaId = await uploadFeaturedImageToWordPress(post.featured_image_url, wp_url, wp_username, wp_app_password);
   }
 
+  // Structured data: BlogPosting + FAQPage (when a FAQ section is detected)
+  // so the post can actually claim the rich-snippet eligibility it was
+  // written for, instead of just having FAQ text with no schema backing it.
+  const schemas = buildPostSchemas({
+    title: String(post.title ?? ""),
+    excerpt: typeof post.excerpt === "string" ? post.excerpt : undefined,
+    content: String(post.content ?? ""),
+    featuredImageUrl: typeof post.featured_image_url === "string" ? post.featured_image_url : null,
+    publishedAt: typeof post.published_at === "string" ? post.published_at : null,
+    authorName: profile.display_name ?? null,
+  });
+  const contentWithSchema = `${markdownToHtml(String(post.content ?? ""))}\n\n${schemaScriptTag(schemas)}`;
+
   const res = await fetchWithRetry(
     apiUrl,
     {
@@ -87,7 +101,7 @@ async function publishToWordPress(
       },
       body: JSON.stringify({
         title:   post.title,
-        content: markdownToHtml(String(post.content ?? "")),
+        content: contentWithSchema,
         excerpt: post.excerpt ?? "",
         status:  "publish",
         ...(post.seo_title       && { meta: { _yoast_wpseo_title: post.seo_title } }),
@@ -212,7 +226,7 @@ serve(async (req) => {
       // Step 2: Load user profile for platform credentials
       const { data: profile } = await admin
         .from("profiles")
-        .select("wp_url, wp_username, wp_app_password, wp_app_password_enc, medium_integration_token, medium_author_id")
+        .select("wp_url, wp_username, wp_app_password, wp_app_password_enc, medium_integration_token, medium_author_id, display_name")
         .eq("user_id", post.user_id)
         .single();
 
