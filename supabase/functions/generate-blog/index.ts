@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { searchSerp, scrapePage } from "../_shared/scraping.ts";
 import { scoreContent, countWords } from "../_shared/seo-scorer.ts";
+import { findRelatedPosts, stripUnauthorizedLinks, countLinksUsed, type RelatedPostCandidate } from "../_shared/internal-links.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -343,16 +344,34 @@ serve(async (req) => {
       return { context: "", urls };
     };
 
-    const [contentIntelligence, competitorResearch] = await Promise.all([
+    const fetchRelatedPosts = async (): Promise<RelatedPostCandidate[]> => {
+      try {
+        const queryText = [topic, keywords].filter(Boolean).join(" | ");
+        const related = await findRelatedPosts(supabase, userId, queryText, OPENAI_API_KEY, 3);
+        console.log(`[generate-blog] Found ${related.length} related post(s) to link internally`);
+        return related;
+      } catch (e) {
+        console.log("[generate-blog] Internal-link lookup failed, proceeding without it:", e);
+        return [];
+      }
+    };
+
+    const [contentIntelligence, competitorResearch, relatedPosts] = await Promise.all([
       fetchContentIntelligence(),
       fetchCompetitorResearch(),
+      fetchRelatedPosts(),
     ]);
     const competitorContext = competitorResearch.context;
     const competitorUrls = competitorResearch.urls;
+    const allowedLinkUrls = new Set(relatedPosts.map((p) => p.url));
 
     // ── PHASE 2: Generate blog post (grounded in competitor data + intelligence) ──
     const competitorSection = competitorContext
       ? `\n\n## LIVE COMPETITOR INTELLIGENCE (from current Google top results)\nAnalyze these top-ranking pages and CREATE SUPERIOR content that covers their topics more comprehensively, fills their gaps, and provides more unique value:\n\n${competitorContext}\n\n### Your content MUST:\n- Cover all major topics the competitors cover PLUS additional unique angles they miss\n- Be longer and more comprehensive than competitors (target 2,000+ words)\n- Include unique insights, data points, or frameworks not found in any competitor\n- Answer questions competitors leave unanswered`
+      : "";
+
+    const internalLinkingSection = relatedPosts.length > 0
+      ? `\n\n## INTERNAL LINKING\nNaturally weave hyperlinks to 2–3 of these existing posts from our own site into relevant sentences in the body (not forced, not all in one place):\n${relatedPosts.map((p) => `- [${p.title}](${p.url})`).join("\n")}\n\nUse ONLY these exact URLs for internal links. Do not invent, guess, or use any other URL for a hyperlink anywhere in the content.`
       : "";
 
     const templateSection = template
@@ -463,6 +482,7 @@ ${formatGuide}
 ${intelligenceSection}
 ${competitorSection}
 ${templateSection}
+${internalLinkingSection}
 
 CRITICAL REQUIREMENTS:
 1. Follow the FORMAT INSTRUCTIONS above to structure the article correctly for its type (${contentType})
@@ -471,7 +491,8 @@ CRITICAL REQUIREMENTS:
 4. Answer all FAQ questions if provided
 5. Include all semantic entities naturally
 6. The content field must be a complete, polished article of ${intelligenceWordCount} words (±10%)
-7. ${contentIntelligence ? 'Address all content gaps mentioned to differentiate from competitors' : 'Provide unique insights not found in the top 10 Google results'}`;
+7. ${contentIntelligence ? 'Address all content gaps mentioned to differentiate from competitors' : 'Provide unique insights not found in the top 10 Google results'}
+8. ${relatedPosts.length > 0 ? 'Use the INTERNAL LINKING URLs exactly as given — never a different or invented URL' : 'Do not add any hyperlinks to the content — no related posts were found to link to'}`;
 
     console.log("[generate-blog] Calling OpenAI for generation with content intelligence...");
     const rawGeneration = await callOpenAI(
@@ -643,6 +664,17 @@ Return ONLY valid JSON in the same format: { title, excerpt, content, keywords, 
     }
 
     // ── Final metadata ─────────────────────────────────────────────────────────
+    // Safety net: strip any hyperlink whose URL isn't one of the internal
+    // links we actually offered — guards the unattended auto-publish
+    // pipeline against a hallucinated or mis-copied URL ever going live.
+    let internalLinksUsed = 0;
+    if (allowedLinkUrls.size > 0 || /\[[^\]]+\]\([^)]+\)/.test(post.content || "")) {
+      const before = post.content || "";
+      post.content = stripUnauthorizedLinks(before, allowedLinkUrls);
+      internalLinksUsed = countLinksUsed(post.content, allowedLinkUrls);
+      console.log(`[generate-blog] Internal links: ${internalLinksUsed} used of ${allowedLinkUrls.size} offered${before !== post.content ? " (stripped unauthorized link(s))" : ""}`);
+    }
+
     post.wordCount = countWords(post.content || "");
     post.competitorUrlsAnalyzed = competitorUrls.length;
     post.ogImagePrompt = post.ogImagePrompt || "";
@@ -667,6 +699,7 @@ Return ONLY valid JSON in the same format: { title, excerpt, content, keywords, 
       seoScoreGrade: scoreBreakdown.grade,
       seoScoreBreakdown: scoreBreakdown,
       featuredImageUrl,
+      internalLinks: { offered: relatedPosts, used: internalLinksUsed },
       contentIntelligence: contentIntelligence ? {
         searchIntent: contentIntelligence.searchIntent?.primary,
         intentConfidence: contentIntelligence.searchIntent?.confidence,
