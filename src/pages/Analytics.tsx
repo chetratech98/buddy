@@ -4,10 +4,12 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import {
   FileText, TrendingUp, Calendar, Clock, CheckCircle2, Loader2,
-  ArrowUp, ArrowDown, Minus, RefreshCw, BarChart3,
+  ArrowUp, ArrowDown, Minus, RefreshCw, BarChart3, AlertTriangle, TrendingDown,
 } from "lucide-react";
 import { PageShell } from "@/components/PageShell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useToast } from "@/hooks/use-toast";
 import {
   BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -81,6 +83,7 @@ interface RankingRow {
 const Analytics = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [range,   setRange]   = useState<7 | 30>(30);
   const [activeTab, setActiveTab] = useState<"overview" | "rankings">("overview");
@@ -150,9 +153,12 @@ const Analytics = () => {
     }
   }, [user]);
 
+  // Fetch rankings on load regardless of which tab is active, so a "posts
+  // losing rank" alert can be surfaced immediately instead of only after
+  // the user happens to click into the Rankings tab.
   useEffect(() => {
-    if (activeTab === "rankings") fetchRankings();
-  }, [activeTab, fetchRankings]);
+    fetchRankings();
+  }, [fetchRankings]);
 
   const handleRunRankCheck = async () => {
     if (!user) return;
@@ -163,17 +169,34 @@ const Analytics = () => {
       });
       if (error) throw error;
       await fetchRankings();
-      // Show result summary
       const r = data as { processed?: number; ranked?: number; improved?: number; dropped?: number };
-      const msg = `Checked ${r.processed ?? 0} posts: ${r.ranked ?? 0} ranked, ${r.improved ?? 0} improved, ${r.dropped ?? 0} dropped`;
-      alert(msg); // simple feedback
+      toast({
+        title: "Rank check complete",
+        description: `Checked ${r.processed ?? 0} posts: ${r.ranked ?? 0} ranked, ${r.improved ?? 0} improved, ${r.dropped ?? 0} dropped.`,
+      });
     } catch (e) {
       console.error("Rank check error:", e);
-      alert("Rank check failed — check that SERP_API_KEY is configured.");
+      toast({
+        title: "Rank check failed",
+        description: "Check that SERP_API_KEY is configured.",
+        variant: "destructive",
+      });
     } finally {
       setRankCheckLoading(false);
     }
   };
+
+  // Previous position, reconstructed from the stored delta — rank-tracker
+  // treats "fell out of the top 100" as position 101 when computing
+  // change_from_last, so this correctly recovers the prior position even
+  // when the post isn't ranked at all right now.
+  const getPrevPosition = (r: RankingRow): number | null =>
+    r.changeFromLast === null ? null : (r.position ?? 101) - r.changeFromLast;
+
+  // Worst-first: posts whose rank got worse, sorted by the size of the drop.
+  const droppedRankings = rankings
+    .filter((r) => r.changeFromLast !== null && r.changeFromLast > 0)
+    .sort((a, b) => (b.changeFromLast ?? 0) - (a.changeFromLast ?? 0));
 
   const fetchAnalytics = async () => {
     if (!user) {
@@ -318,6 +341,26 @@ const Analytics = () => {
           </div>
         </div>
 
+        {/* ── Needs Attention banner — surfaced regardless of active tab ── */}
+        {droppedRankings.length > 0 && (
+          <Alert variant="destructive" className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+              <AlertDescription>
+                <strong>{droppedRankings.length}</strong> post{droppedRankings.length === 1 ? "" : "s"} dropped in Google ranking since the last check.
+              </AlertDescription>
+            </div>
+            {activeTab !== "rankings" && (
+              <button
+                onClick={() => setActiveTab("rankings")}
+                className="text-sm font-medium underline shrink-0 whitespace-nowrap"
+              >
+                View details
+              </button>
+            )}
+          </Alert>
+        )}
+
         {/* ── Rankings Tab ── */}
         {activeTab === "rankings" && (
           <div className="space-y-6">
@@ -340,6 +383,53 @@ const Analytics = () => {
                 )}
               </button>
             </div>
+
+            {/* ── Posts Losing Rank — worst drop first, the actionable triage list ── */}
+            {!rankingsLoading && droppedRankings.length > 0 && (
+              <Card className="border-destructive/30">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <TrendingDown className="h-4 w-4 text-destructive" /> Posts Losing Rank
+                  </CardTitle>
+                  <CardDescription>Sorted by the size of the drop — review these first.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {droppedRankings.slice(0, 8).map((r, i) => {
+                    const prevPosition = getPrevPosition(r);
+                    return (
+                      <div
+                        key={`${r.postId}_${r.keyword}_${i}`}
+                        className="flex items-center justify-between gap-4 py-2.5 border-b last:border-0"
+                      >
+                        <div className="min-w-0">
+                          <button
+                            onClick={() => navigate(`/posts/${r.postId}/edit`)}
+                            className="text-left font-medium hover:text-primary transition-colors line-clamp-1"
+                          >
+                            {r.postTitle}
+                          </button>
+                          <p className="text-xs text-muted-foreground line-clamp-1">{r.keyword}</p>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="text-sm tabular-nums text-muted-foreground">
+                            {prevPosition !== null ? `#${prevPosition}` : "?"} → {r.position !== null ? `#${r.position}` : "Not in top 100"}
+                          </span>
+                          <span className="flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 dark:bg-red-950/30 px-2 py-1 rounded-md">
+                            <ArrowDown size={12} /> {r.changeFromLast}
+                          </span>
+                          <button
+                            onClick={() => navigate(`/posts/${r.postId}/edit`)}
+                            className="text-xs font-medium text-primary hover:underline whitespace-nowrap"
+                          >
+                            Review
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </CardContent>
+              </Card>
+            )}
 
             {rankingsLoading ? (
               <div className="flex justify-center py-16">

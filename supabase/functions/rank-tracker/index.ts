@@ -214,6 +214,15 @@ serve(async (req) => {
 
       if (prevPosition !== null && position !== null) {
         changeFromLast = position - prevPosition; // positive = fell, negative = rose
+      } else if (prevPosition !== null && position === null) {
+        // Fell out of the tracked results entirely — the single worst kind
+        // of drop, but previously went completely untracked (changeFromLast
+        // stayed null, so it never showed up as a "drop" anywhere). Treat
+        // "not found in the top 100" as position 101 for diffing purposes —
+        // a standard SEO-tooling convention — so this is never invisible.
+        changeFromLast = 101 - prevPosition;
+      }
+      if (changeFromLast !== null) {
         if (changeFromLast < 0) improved++;
         else if (changeFromLast > 0) dropped++;
       }
