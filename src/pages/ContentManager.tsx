@@ -91,6 +91,14 @@ const ContentManager = () => {
   const handleApprove = async (post: BlogPost) => {
     setReviewActionId(post.id);
     try {
+      // Posts held for review are generated without images (so a rejected
+      // post never pays for them) — create any missing ones now. Best-effort:
+      // a failure here must never block the approval itself.
+      try {
+        await supabase.functions.invoke("generate-post-images", { body: { postId: post.id } });
+      } catch (imageErr) {
+        console.warn("Image backfill failed, publishing without:", imageErr);
+      }
       const result = await publishPostNow(post.id);
       const { title, description, hasFailure } = describePublishResult(result);
       toast({ title, description, variant: hasFailure ? "destructive" : "default" });

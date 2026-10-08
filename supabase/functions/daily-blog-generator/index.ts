@@ -207,11 +207,28 @@ serve(async (req) => {
       }
 
       try {
-        const { data: languageProfile } = await admin
+        const { data: publishProfile } = await admin
           .from("profiles")
-          .select("content_language")
+          .select("content_language, auto_publish_enabled, require_review_before_publish, medium_integration_token, medium_author_id")
           .eq("user_id", userId)
-          .maybeSingle();
+          .single();
+
+        // Checks the same precedence the actual publish step will use
+        // (explicit site -> org/user default site -> legacy profile fields)
+        // — a user who only ever set up a site via Settings > Sites and
+        // never touched the old single-site profile form still counts as
+        // having WordPress connected.
+        const resolvedSite = await resolveWpSiteCredentials(admin, { userId, orgId: null, siteId: null });
+        const hasWordPress = Boolean(resolvedSite);
+        const hasMedium = Boolean(publishProfile?.medium_integration_token && publishProfile?.medium_author_id);
+
+        // Posts that will be held for review don't get images up front — a
+        // rejected post would have paid for two images it never uses. They're
+        // generated on Approve instead (generate-post-images). Posts that
+        // end up as plain drafts or auto-publish keep inline images.
+        const deferImages = Boolean(publishProfile?.auto_publish_enabled)
+          && Boolean(publishProfile?.require_review_before_publish)
+          && (hasWordPress || hasMedium);
 
         const { data, error } = await admin.functions.invoke("generate-blog", {
           headers: { Authorization: `Bearer ${INTERNAL_FUNCTION_SECRET}` },
@@ -220,7 +237,8 @@ serve(async (req) => {
             topic: todayItem.title,
             keywords: [todayItem.keyword, todayItem.long_tail_keyword].filter(Boolean).join(", "),
             tone: plan.tone || "professional",
-            language: languageProfile?.content_language || "English",
+            language: publishProfile?.content_language || "English",
+            skipImages: deferImages,
             targetWordCount: 2500,
             contentType: todayItem.type,
             contentPlanBrief: todayItem.description || "",
@@ -274,20 +292,8 @@ serve(async (req) => {
         // duplicate. Anyone who doesn't meet all three keeps today's
         // behavior: a draft in Posts that a human reviews and publishes
         // themselves.
-        const { data: publishProfile } = await admin
-          .from("profiles")
-          .select("auto_publish_enabled, require_review_before_publish, medium_integration_token, medium_author_id")
-          .eq("user_id", userId)
-          .single();
-
-        // Checks the same precedence the actual publish step will use
-        // (explicit site -> org/user default site -> legacy profile fields)
-        // — a user who only ever set up a site via Settings > Sites and
-        // never touched the old single-site profile form still counts as
-        // having WordPress connected.
-        const resolvedSite = await resolveWpSiteCredentials(admin, { userId, orgId: null, siteId: null });
-        const hasWordPress = Boolean(resolvedSite);
-        const hasMedium = Boolean(publishProfile?.medium_integration_token && publishProfile?.medium_author_id);
+        // (publishProfile / hasWordPress / hasMedium were loaded above, before
+        // generation, since deferring images depends on them too.)
         const autoPublish = Boolean(publishProfile?.auto_publish_enabled) && (hasWordPress || hasMedium) && !isNearDuplicate;
 
         // Opt-in safety net on top of auto-publish: instead of scheduling for

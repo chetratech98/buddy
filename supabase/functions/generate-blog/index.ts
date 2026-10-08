@@ -3,6 +3,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { searchSerp, scrapePage } from "../_shared/scraping.ts";
 import { scoreContent, countWords } from "../_shared/seo-scorer.ts";
 import { findRelatedPosts, stripUnauthorizedLinks, countLinksUsed, type RelatedPostCandidate } from "../_shared/internal-links.ts";
+import { generatePostImage, pickBodySectionForImage, insertImageAfterHeading, bodyImagePrompt } from "../_shared/post-images.ts";
+import { estimateChatCost, logAiUsage } from "../_shared/ai-usage.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -18,34 +20,6 @@ const corsHeaders = {
 // actually measures, so "hit the target" didn't reliably mean "scores well
 // on word count". Using the scorer's own counter for enforcement closes
 // that gap.
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helper: pick one H2 section to illustrate with an in-body image — roughly
-// the middle of the article, skipping the opening section (keep the intro
-// clean) and anything that looks like FAQ/conclusion (image doesn't fit the
-// Q&A format and the article is winding down by then anyway).
-// ─────────────────────────────────────────────────────────────────────────────
-function pickBodySectionForImage(content: string): { heading: string; lineIndex: number } | null {
-  const lines = content.split("\n");
-  const h2Indices: number[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (/^##\s+.+$/.test(lines[i]) && !/^###/.test(lines[i])) h2Indices.push(i);
-  }
-  // Skip the first H2 (opening section) and anything FAQ/conclusion-like.
-  const eligible = h2Indices.slice(1).filter((i) => !/faq|frequently asked|conclusion|summary|final thoughts|wrap.?up/i.test(lines[i]));
-  if (eligible.length === 0) return null;
-
-  const midIndex = eligible[Math.floor(eligible.length / 2)];
-  const heading = lines[midIndex].replace(/^##\s+/, "").trim();
-  return { heading, lineIndex: midIndex };
-}
-
-/** Inserts a markdown image right after the given H2 heading's line. */
-function insertImageAfterHeading(content: string, lineIndex: number, imageUrl: string, alt: string): string {
-  const lines = content.split("\n");
-  lines.splice(lineIndex + 1, 0, "", `![${alt.replace(/[[\]]/g, "")}](${imageUrl})`);
-  return lines.join("\n");
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: fetch top competitor URLs from SerpApi
@@ -100,7 +74,8 @@ async function callOpenAI(
   apiKey: string,
   messages: Array<{ role: string; content: string }>,
   temperature = 0.7,
-  model = "gpt-4o-mini"
+  model = "gpt-4o-mini",
+  usage?: { userId: string; purpose: string }
 ): Promise<string> {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -119,68 +94,23 @@ async function callOpenAI(
   }
 
   const data = await res.json();
-  return data.choices?.[0]?.message?.content || "";
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helper: generate the post's featured/OG image from ogImagePrompt and
-// persist it to the post-images Storage bucket. Never throws — a failed
-// image generation (rate limit, content policy, etc.) should never block
-// the post itself; it just means the post has no featured image this time.
-// ─────────────────────────────────────────────────────────────────────────────
-async function generateFeaturedImage(
-  prompt: string,
-  apiKey: string,
-  supabase: ReturnType<typeof createClient>,
-  userId: string
-): Promise<string | null> {
-  if (!prompt) return null;
-  try {
-    const res = await fetch("https://api.openai.com/v1/images/generations", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-image-1",
-        prompt: prompt.slice(0, 4000),
-        size: "1536x1024",
-        quality: "medium",
-        n: 1,
-      }),
+  if (usage) {
+    const promptTokens = data.usage?.prompt_tokens ?? 0;
+    const completionTokens = data.usage?.completion_tokens ?? 0;
+    await logAiUsage({
+      userId: usage.userId,
+      functionName: "generate-blog",
+      kind: "chat",
+      purpose: usage.purpose,
+      model,
+      promptTokens,
+      completionTokens,
+      estCostUsd: estimateChatCost(model, promptTokens, completionTokens),
     });
-
-    if (!res.ok) {
-      console.warn(`[generate-blog] Image generation failed: HTTP ${res.status}`);
-      return null;
-    }
-
-    const data = await res.json();
-    const b64 = data?.data?.[0]?.b64_json;
-    if (!b64) {
-      console.warn("[generate-blog] Image generation returned no image data");
-      return null;
-    }
-
-    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    const path = `${userId}/${Date.now()}-${crypto.randomUUID()}.png`;
-
-    const { error: uploadError } = await supabase.storage
-      .from("post-images")
-      .upload(path, bytes, { contentType: "image/png", upsert: false });
-
-    if (uploadError) {
-      console.warn("[generate-blog] Failed to upload generated image:", uploadError.message);
-      return null;
-    }
-
-    const { data: urlData } = supabase.storage.from("post-images").getPublicUrl(path);
-    return urlData.publicUrl;
-  } catch (e) {
-    console.warn("[generate-blog] Image generation error:", e);
-    return null;
   }
+
+  return data.choices?.[0]?.message?.content || "";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -562,7 +492,7 @@ ${isRegenerate ? "9. This is a REVISION — base your output on the EXISTING POS
         { role: "system", content: systemPrompt },
         { role: "user",   content: userPrompt },
       ],
-      0.7
+      0.7, "gpt-4o-mini", { userId, purpose: "generation" }
     );
 
     let post = parseJSON<BlogPost & { wordCount?: number; competitorUrlsAnalyzed?: number }>(rawGeneration);
@@ -609,7 +539,7 @@ The content must be at least ${targetWordCount} words.`;
           { role: "system", content: `You are an expert SEO content editor who expands and enriches blog posts while maintaining quality and flow. Return ONLY valid JSON.${language.toLowerCase() !== "english" ? ` The post is written in ${language} — keep all added content in ${language}.` : ""}` },
           { role: "user",   content: expansionPrompt },
         ],
-        0.6
+        0.6, "gpt-4o-mini", { userId, purpose: "expansion" }
       );
 
       const expandedPost = parseJSON<BlogPost & { wordCount?: number }>(expandedRaw);
@@ -626,10 +556,16 @@ The content must be at least ${targetWordCount} words.`;
     // Regenerating an existing post that already has an image preserves it
     // rather than paying for a new one on every rewrite — a user who wants a
     // new image can still ask for one in their instruction.
+    // skipImages: the caller (daily-blog-generator, for posts held in review)
+    // will generate images later, only if the post is actually approved —
+    // a rejected post never pays for them.
+    const skipImages = body.skipImages === true;
     const wantsNewImage = !isRegenerate || !existingPost!.featuredImageUrl
       || /\b(image|picture|photo|graphic|thumbnail)\b/i.test(regenerateInstruction);
-    const featuredImagePromise = wantsNewImage
-      ? generateFeaturedImage(post.ogImagePrompt || "", OPENAI_API_KEY, supabase, userId)
+    const featuredImagePromise: Promise<string | null> = skipImages
+      ? Promise.resolve(null)
+      : wantsNewImage
+      ? generatePostImage(post.ogImagePrompt || "", OPENAI_API_KEY, supabase, userId, { functionName: "generate-blog", purpose: "featured_image" })
       : Promise.resolve(existingPost!.featuredImageUrl);
 
     // ── PHASE 4: QA Review Pass ───────────────────────────────────────────────
@@ -677,7 +613,7 @@ If everything is correct, return unchanged.`;
           { role: "system", content: reviewSystemPrompt },
           { role: "user",   content: reviewUserPrompt },
         ],
-        0.3
+        0.3, "gpt-4o-mini", { userId, purpose: "qa_review" }
       );
       const reviewedPost = parseJSON<BlogPost & { wordCount?: number; competitorUrlsAnalyzed?: number }>(reviewedRaw);
       if (reviewedPost?.title && reviewedPost?.content) {
@@ -712,7 +648,7 @@ Return ONLY valid JSON in the same format: { title, excerpt, content, keywords, 
             { role: "system", content: `You are a precise SEO editor making surgical, targeted fixes to an existing draft. Return ONLY valid JSON.${language.toLowerCase() !== "english" ? ` The post is written in ${language} — keep all edits in ${language}.` : ""}` },
             { role: "user", content: fixPrompt },
           ],
-          0.3
+          0.3, "gpt-4o-mini", { userId, purpose: "targeted_fix" }
         );
         const fixedPost = parseJSON<BlogPost & { wordCount?: number; competitorUrlsAnalyzed?: number }>(fixedRaw);
         if (fixedPost?.title && fixedPost?.content) {
@@ -756,10 +692,10 @@ Return ONLY valid JSON in the same format: { title, excerpt, content, keywords, 
     // to the featured image — generated last (after the content is truly
     // final) so the heading it illustrates is guaranteed to still exist in
     // the shipped article. Never blocks the post if generation fails.
-    const bodySection = pickBodySectionForImage(post.content || "");
+    const bodySection = skipImages ? null : pickBodySectionForImage(post.content || "");
     if (bodySection) {
-      const sectionImagePrompt = `Create a single standalone illustration for a blog section titled "${bodySection.heading}", in an article about "${topic}". Match this visual style and color palette: ${post.ogImagePrompt || "clean, modern, professional"}. No embedded text, logos, or words in the image — imagery only.`;
-      const bodyImageUrl = await generateFeaturedImage(sectionImagePrompt, OPENAI_API_KEY, supabase, userId);
+      const sectionImagePrompt = bodyImagePrompt(bodySection.heading, topic, post.ogImagePrompt || "");
+      const bodyImageUrl = await generatePostImage(sectionImagePrompt, OPENAI_API_KEY, supabase, userId, { functionName: "generate-blog", purpose: "body_image" });
       if (bodyImageUrl) {
         post.content = insertImageAfterHeading(post.content || "", bodySection.lineIndex, bodyImageUrl, bodySection.heading);
         post.wordCount = countWords(post.content || "");
@@ -768,7 +704,7 @@ Return ONLY valid JSON in the same format: { title, excerpt, content, keywords, 
         console.log(`[generate-blog] In-body image: generation failed or skipped for section "${bodySection.heading}"`);
       }
     } else {
-      console.log("[generate-blog] In-body image: no eligible section found, skipping");
+      console.log(`[generate-blog] In-body image: ${skipImages ? "deferred (skipImages)" : "no eligible section found, skipping"}`);
     }
 
     // Real, measured values — not just AI-echoed fields — so every caller
@@ -788,6 +724,7 @@ Return ONLY valid JSON in the same format: { title, excerpt, content, keywords, 
       seoScoreGrade: scoreBreakdown.grade,
       seoScoreBreakdown: scoreBreakdown,
       featuredImageUrl,
+      imagesDeferred: skipImages,
       internalLinks: { offered: relatedPosts, used: internalLinksUsed },
       contentIntelligence: contentIntelligence ? {
         searchIntent: contentIntelligence.searchIntent?.primary,

@@ -10,6 +10,7 @@ import { Loader2, Users, FileText, Calendar, BarChart, DollarSign, ShieldCheck, 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { PageShell } from "@/components/PageShell";
+import { AiSpendCard } from "@/components/admin/AiSpendCard";
 import { ADMIN_ROLES, ROLE_LABELS, can, type AdminRole } from "@/lib/rbac";
 import { logAdminAction } from "@/lib/audit";
 
@@ -662,6 +663,7 @@ const Admin = () => {
 
           {/* Automation Health Tab */}
           <TabsContent value="automation" className="space-y-4">
+            <AiSpendCard />
             {/* Health banners */}
             {automationHealth.dailyBlogStale && (
               <Alert variant="destructive">
