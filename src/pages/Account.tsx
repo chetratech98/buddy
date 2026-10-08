@@ -246,7 +246,7 @@ const Account = () => {
   const [openingPortal, setOpeningPortal] = useState(false);
   const [currentPlan, setCurrentPlan] = useState<string>("free");
   const [subscriptionStatus, setSubscriptionStatus] = useState<string>("active");
-  const [quotaInfo, setQuotaInfo] = useState({ used: 0, total: 30 });
+  const [quotaInfo, setQuotaInfo] = useState({ used: 0, total: 5 });
   const [billingInterval, setBillingInterval] = useState<"month" | "year">("month");
   const sessionResult = searchParams.get("session");
 
@@ -268,7 +268,7 @@ const Account = () => {
         setSubscriptionStatus(data.subscription_status || "active");
         setQuotaInfo({
           used: data.posts_used_this_month || 0,
-          total: data.posts_quota_monthly || 30,
+          total: data.posts_quota_monthly || 5,
         });
       }
     } catch (error) {

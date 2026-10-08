@@ -127,7 +127,7 @@ serve(async (req) => {
           subscription_tier: "free",
           subscription_status: "canceled",
           stripe_subscription_id: null,
-          posts_quota_monthly: 30,
+          posts_quota_monthly: 5,
         }).eq("stripe_customer_id", customerId);
 
         if (error) console.error("[stripe-webhook] Failed to downgrade:", error);
